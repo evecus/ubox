@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -79,15 +80,17 @@ import android.view.KeyEvent as AndroidKeyEvent
 @Composable
 fun HomeScreen(
     onOpenDetail: (String, String, String) -> Unit,
-    onOpenSearch: (String?, String) -> Unit,
+    onOpenSearch: (String) -> Unit,
     onOpenBrowse: (String, String) -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenLive: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenPlayer: (String, String, String, String, String, List<String>, List<String>, Int) -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
+    val remote by TvMode.isRemote.collectAsStateWithLifecycle()
     val config by vm.config.collectAsStateWithLifecycle()
     val site by vm.site.collectAsStateWithLifecycle()
     val tabs by vm.tabs.collectAsStateWithLifecycle()
@@ -166,15 +169,17 @@ fun HomeScreen(
     Column(modifier = menuModifier.fillMaxSize()) {
         HomeTopBar(
             tv = tv,
+            remote = remote,
             lineLabel = lineLabelOf(lines, config),
             siteName = site?.displayName ?: "站源",
             lineBusy = lineBusy,
             onLineClick = { if (lines.size >= 2) showLinePicker = true },
             onSiteClick = { showSitePicker = true },
-            onSearchClick = { onOpenSearch(site?.key, "") },
+            onSearchClick = { onOpenSearch("") },
             onFavoritesClick = onOpenFavorites,
             onHistoryClick = onOpenHistory,
             onLiveClick = onOpenLive,
+            onOpenSettings = onOpenSettings,
         )
         HomeTabBar(
             tabs = tabs,
@@ -232,7 +237,7 @@ fun HomeScreen(
                         if (resolved != null) {
                             if (item.searchOnly) {
                                 // 豆瓣热播条目没有 vod_id: 跳搜索页
-                                onOpenSearch(resolved.key, item.name)
+                                onOpenSearch(item.name)
                             } else {
                                 onOpenDetail(resolved.key, item.id, item.name)
                             }
@@ -283,10 +288,11 @@ private fun lineLabelOf(lines: List<ConfigLine>, config: com.me.ubox.data.Config
     return "线路"
 }
 
-/** 顶部: 线路 / 站源 / 搜索 / 收藏 / 历史 / 直播 (TV 下为可聚焦 chip). */
+/** 顶部: 线路 / 站源 / 搜索 / 收藏 / 历史 / 直播 (TV 下为可聚焦 chip; 真 TV 追加设置入口). */
 @Composable
 private fun HomeTopBar(
     tv: Boolean,
+    remote: Boolean,
     lineLabel: String,
     siteName: String,
     lineBusy: Boolean,
@@ -296,6 +302,7 @@ private fun HomeTopBar(
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
     onLiveClick: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -348,6 +355,12 @@ private fun HomeTopBar(
             TvButton(label = "历史", icon = Icons.Filled.History, height = 52.dp, onTap = onHistoryClick)
             Spacer(Modifier.width(6.dp))
             TvButton(label = "直播", icon = Icons.Filled.LiveTv, height = 52.dp, onTap = onLiveClick)
+            // 真 TV 无左侧栏: 设置入口放首页右上角, 与 搜索/收藏/历史/直播 同排
+            // (平板仍走左侧栏, 手机走底部导航, 均不显示此按钮).
+            if (remote) {
+                Spacer(Modifier.width(6.dp))
+                TvButton(label = "设置", icon = Icons.Filled.Settings, height = 52.dp, onTap = onOpenSettings)
+            }
         } else {
             Icon(imageVector = Icons.Outlined.StarBorder, contentDescription = "收藏", modifier = Modifier.clickable(onClick = onFavoritesClick).padding(8.dp))
             Icon(imageVector = Icons.Filled.History, contentDescription = "历史", modifier = Modifier.clickable(onClick = onHistoryClick).padding(8.dp))

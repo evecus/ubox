@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBackIosNew
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Palette
@@ -47,6 +48,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -62,8 +65,10 @@ import com.me.ubox.danmaku.DanmakuApi
 import com.me.ubox.danmaku.DanmakuManager
 import com.me.ubox.danmaku.DanmuSettings
 import com.me.ubox.engine.EngineClient
+import com.me.ubox.ui.AppShell
 import com.me.ubox.ui.AppSnackbar
 import com.me.ubox.ui.components.SectionHeader
+import com.me.ubox.ui.components.TvButton
 import com.me.ubox.ui.components.TvFocusable
 import com.me.ubox.ui.components.pageFocusGuard
 import com.me.ubox.ui.dialogs.ConfigImportDialog
@@ -151,6 +156,38 @@ fun SettingsScreen() {
     }
 
     LaunchedEffect(Unit) { refreshEngine() }
+
+    // 真 TV 无左侧栏: 设置页顶部提供"返回首页"入口 (平板走左侧栏, 手机走底部导航).
+    // 每次切到设置页都把焦点落到该按钮 (KeepAliveStack 的隐藏页不抢焦点).
+    if (remoteMode) {
+        val backRequester = remember { FocusRequester() }
+        val shellTab by AppShell.tabIndex.collectAsStateWithLifecycle()
+        LaunchedEffect(shellTab) {
+            if (shellTab == AppShell.SETTINGS_TAB) {
+                repeat(8) {
+                    androidx.compose.runtime.withFrameNanos { }
+                    val ok = try {
+                        backRequester.requestFocus()
+                        true
+                    } catch (_: IllegalStateException) {
+                        false
+                    }
+                    if (ok) return@LaunchedEffect
+                }
+            }
+        }
+        TvButton(
+            label = "返回首页",
+            icon = Icons.Filled.ArrowBackIosNew,
+            height = 48.dp,
+            fontSize = 16,
+            autofocus = true,
+            onTap = { AppShell.selectTab(AppShell.HOME_TAB) },
+            modifier = Modifier
+                .focusRequester(backRequester)
+                .padding(bottom = 8.dp),
+        )
+    }
 
     Column(
         modifier = Modifier

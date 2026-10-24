@@ -18,11 +18,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBackIosNew
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,11 +35,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,70 +48,63 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.lifecycle.viewmodel.viewModelFactory
-import androidx.lifecycle.viewmodel.initializer
 import com.me.ubox.TvMode
 import com.me.ubox.data.Site
 import com.me.ubox.ui.AppSnackbar
-import com.me.ubox.ui.components.NetworkImage
-import com.me.ubox.ui.components.SimpleTopBar
 import com.me.ubox.ui.components.TvButton
 import com.me.ubox.ui.components.TvFocusable
-import com.me.ubox.ui.components.VodPoster
 import com.me.ubox.ui.dialogs.SinglePickSheet
 
 /**
- * 全站搜索页 (对照 Flutter 版 search_page.dart).
+ * 全站搜索页 (对照原版 SearchActivity, 页签与搜索结果分离):
+ *   手机 = 顶栏输入框 + 热词/历史;
+ *   平板 = 搜索框 (软键盘) + 热门/历史 左右排布, 无屏显键盘;
+ *   TV   = 三栏: 左栏 指定搜索源 + 输入框 + 搜索/清空 + 屏显键盘,
+ *         中栏 热门/猜你想搜 (输入首字母后热门改为猜你想搜, 对照原版 loadRec),
+ *         右栏 历史 (对照原版 historyWordGrid).
  *
- * 手机: 顶栏输入框 + 搜索按钮 + 源筛选 + 结果列表; 空状态给热词快捷入口.
- * TV: 三栏 —— 左栏 = 指定搜索源按钮 + 输入框 + 搜索/清空按钮 + 屏显键盘;
- *      中栏 = 热词; 右栏 = 源筛选 + 结果.
+ * 提交搜索后由调用方推 [com.me.ubox.ui.Route.SearchResults] 结果页;
+ * 返回时路由条目已回填输入词与指定源 (恢复输入, 对照原版 etSearch 保留文本).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
-    siteKey: String?,
     initialQuery: String,
+    searchSiteKey: String?,
+    autoSearch: Boolean,
     onBack: () -> Unit,
-    onOpenDetail: (String, String, String) -> Unit,
-    vm: SearchViewModel = viewModel(factory = viewModelFactory {
-        initializer { SearchViewModel(siteKey, initialQuery) }
-    }),
+    onSubmit: (String, String?) -> Unit,
+    vm: SearchViewModel = viewModel(),
 ) {
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
     val remote by TvMode.isRemote.collectAsStateWithLifecycle()
     val sites by vm.sites.collectAsStateWithLifecycle()
-    val results by vm.results.collectAsStateWithLifecycle()
-    val query by vm.query.collectAsStateWithLifecycle()
-    val running by vm.running.collectAsStateWithLifecycle()
-    val done by vm.done.collectAsStateWithLifecycle()
-    val filter by vm.filter.collectAsStateWithLifecycle()
-    val searchSite by vm.searchSite.collectAsStateWithLifecycle()
     val hotWords by vm.hotWords.collectAsStateWithLifecycle()
     val hotLoading by vm.hotLoading.collectAsStateWithLifecycle()
-    val focusFirstResult by vm.focusFirstResult.collectAsStateWithLifecycle()
+    val suggestions by vm.suggestions.collectAsStateWithLifecycle()
+    val history by vm.history.collectAsStateWithLifecycle()
 
     var input by remember { mutableStateOf(initialQuery) }
+    var searchSite by remember { mutableStateOf(searchSiteKey) }
     var showSitePicker by remember { mutableStateOf(false) }
-    var inputFocused by remember { mutableStateOf(false) }
-    val inputFocusRequester = remember { FocusRequester() }
     val phoneInputFocusRequester = remember { FocusRequester() }
+    val tvInputFocusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
 
-    // 提交搜索 (对照 Flutter _search): 空词提示, 提交后收起软键盘.
+    // 提交搜索 (对照原版 search()): 空词提示, 记历史, 手机收起软键盘.
     fun submitSearch(q: String) {
         val trimmed = q.trim()
         if (trimmed.isEmpty()) {
@@ -115,186 +113,72 @@ fun SearchScreen(
         }
         // 仅手机需要收起软键盘; TV 没有软键盘, 强制清焦点会让遥控器失去焦点落点.
         if (!tv) focusManager.clearFocus(force = true)
-        vm.search(trimmed)
+        vm.recordHistory(trimmed)
+        onSubmit(trimmed, searchSite)
     }
 
-    // 注意: 不把路由带来的 siteKey 设成搜索源 (对照原版 initialSite 不使用),
-    // 初始即并行搜索全部源; 指定搜索源由用户点「指定搜索源」按钮选择.
-    LaunchedEffect(initialQuery) {
-        if (initialQuery.isNotEmpty()) {
-            input = initialQuery
-            vm.search(initialQuery)
-        }
-    }
-    LaunchedEffect(focusFirstResult) {
-        if (focusFirstResult) {
-            // autofocus 只在本帧生效, 下一帧清零防止后续重建抢焦点.
-            vm.consumeFocusFirstResult()
-        }
+    // 首页热播条目跳转 (对照原版 intent extra "title"): 初始词立即搜索进结果页.
+    // autoSearch=false 时是从结果页返回 (路由已回填输入词), 只恢复输入不重复搜索.
+    LaunchedEffect(Unit) {
+        if (autoSearch && initialQuery.isNotEmpty()) submitSearch(initialQuery)
     }
 
-    if (!tv) {
-        // ---------------- 手机: 原布局 ----------------
-        // 无初始词时自动聚焦输入框 (对照 Flutter autofocus: widget.initialQuery.isEmpty).
-        LaunchedEffect(Unit) {
-            if (initialQuery.isEmpty()) phoneInputFocusRequester.requestFocus()
-        }
-        androidx.compose.material3.Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Box(
-                            modifier = Modifier
-                                .height(40.dp)
-                                .border(
-                                    width = 1.2.dp,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    shape = RoundedCornerShape(20.dp),
-                                )
-                                .padding(horizontal = 16.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            OutlinedTextField(
-                                value = input,
-                                onValueChange = { input = it },
-                                singleLine = true,
-                                placeholder = { Text("搜索影片 / 演员 / 关键词") },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .focusRequester(phoneInputFocusRequester),
-                                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                                    onSearch = { submitSearch(input) },
-                                ),
-                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                                    imeAction = androidx.compose.ui.text.input.ImeAction.Search,
-                                ),
-                                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color.Transparent,
-                                    unfocusedBorderColor = Color.Transparent,
-                                ),
-                            )
-                        }
-                    },
-                    navigationIcon = {
-                        IconButton(onClick = onBack) {
-                            Icon(Icons.Filled.ArrowBackIosNew, contentDescription = "返回")
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { submitSearch(input) }) {
-                            Icon(Icons.Filled.Search, contentDescription = "搜索")
-                        }
-                    },
-                )
+    // 输入变化驱动猜你想搜 (仅 TV 屏显键盘; 手机/平板软键盘自带联想).
+    val onInputChange: (String) -> Unit = { text ->
+        input = text
+        if (remote) vm.onInputChanged(text)
+    }
+
+    when {
+        !tv -> PhoneSearchLayout(
+            input = input,
+            sitesCount = sites.size,
+            hotWords = hotWords,
+            hotLoading = hotLoading,
+            history = history,
+            inputFocusRequester = phoneInputFocusRequester,
+            initialQuery = initialQuery,
+            onInputChange = onInputChange,
+            onSubmitQuery = { submitSearch(input) },
+            onPickWord = { w -> input = w; submitSearch(w) },
+            onClearHistory = vm::clearHistory,
+            onBack = onBack,
+        )
+
+        remote -> TvSearchLayout(
+            searchSiteName = searchSite
+                ?.let { key -> sites.firstOrNull { it.key == key }?.name } ?: "全部源站",
+            input = input,
+            inputFocusRequester = tvInputFocusRequester,
+            onInputChange = onInputChange,
+            onSubmitQuery = { submitSearch(input) },
+            onClearInput = {
+                input = ""
+                vm.clearSuggestions()
             },
-        ) { padding ->
-            Box(modifier = Modifier.padding(padding)) {
-                SearchBody(
-                    vm = vm,
-                    tv = false,
-                    query = query,
-                    running = running,
-                    done = done,
-                    sitesCount = sites.size,
-                    results = results,
-                    filter = filter,
-                    hotWords = hotWords,
-                    onPickWord = { w ->
-                        input = w
-                        submitSearch(w)
-                    },
-                    onOpenDetail = onOpenDetail,
-                )
-            }
-        }
-        return
-    }
+            onPickSearchSite = { showSitePicker = true },
+            hotWords = hotWords,
+            hotLoading = hotLoading,
+            suggestions = suggestions,
+            history = history,
+            onPickWord = { w -> input = w; submitSearch(w) },
+            onClearHistory = vm::clearHistory,
+        )
 
-    // ---------------- TV: 三栏 (键盘 / 热词 / 结果) ----------------
-    // TV: 无软键盘, 输入框自动获焦, 遥控器下键即可移到键盘按键.
-    LaunchedEffect(remote) {
-        if (remote) {
-            try { inputFocusRequester.requestFocus() } catch (_: IllegalStateException) {}
-        }
-    }
-    androidx.compose.material3.Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("搜索", style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBackIosNew, contentDescription = "返回")
-                    }
-                },
-            )
-        },
-    ) { padding ->
-        Row(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize(),
-        ) {
-            // 左栏: 指定搜索源 + 输入框 + 搜索/清空 + 屏显键盘
-            Box(modifier = Modifier.width(430.dp)) {
-                TvLeftPanel(
-                    searchSiteName = searchSite?.let { key -> sites.firstOrNull { it.key == key }?.name } ?: "全部源站",
-                    input = input,
-                    inputFocused = inputFocused,
-                    inputFocusRequester = inputFocusRequester,
-                    onInputFocusChanged = { inputFocused = it },
-                    onInputChange = { input = it },
-                    onSearch = { submitSearch(input) },
-                    onClear = {
-                        input = ""
-                        vm.clearQuery()
-                    },
-                    onPickSearchSite = { showSitePicker = true },
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .width(1.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.outlineVariant),
-            )
-            // 中栏: 热词
-            Box(modifier = Modifier.width(240.dp)) {
-                HotWordPanel(
-                    tv = true,
-                    loading = hotLoading,
-                    words = hotWords,
-                    onPick = { w ->
-                        input = w
-                        submitSearch(w)
-                    },
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .width(1.dp)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.outlineVariant),
-            )
-            // 右栏: 源筛选 + 结果
-            Box(modifier = Modifier.weight(1f)) {
-                SearchBody(
-                    vm = vm,
-                    tv = true,
-                    query = query,
-                    running = running,
-                    done = done,
-                    sitesCount = sites.size,
-                    results = results,
-                    filter = filter,
-                    hotWords = hotWords,
-                    onPickWord = { w ->
-                        input = w
-                        submitSearch(w)
-                    },
-                    onOpenDetail = onOpenDetail,
-                )
-            }
-        }
+        else -> PadSearchLayout(
+            searchSiteName = searchSite
+                ?.let { key -> sites.firstOrNull { it.key == key }?.name } ?: "全部源站",
+            input = input,
+            onInputChange = onInputChange,
+            onSubmitQuery = { submitSearch(input) },
+            onPickSearchSite = { showSitePicker = true },
+            hotWords = hotWords,
+            hotLoading = hotLoading,
+            history = history,
+            onPickWord = { w -> input = w; submitSearch(w) },
+            onClearHistory = vm::clearHistory,
+            onBack = onBack,
+        )
     }
 
     if (showSitePicker) {
@@ -308,45 +192,89 @@ fun SearchScreen(
             isSelected = { (it?.key ?: "") == (searchSite ?: "") },
             onPick = { picked ->
                 showSitePicker = false
-                vm.setSearchSite(picked?.key)
+                searchSite = picked?.key
             },
             onDismiss = { showSitePicker = false },
         )
     }
 }
 
-// ---------------------------------------------------------------- 结果区 (双端共用)
+// ---------------------------------------------------------------- 手机
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun SearchBody(
-    vm: SearchViewModel,
-    tv: Boolean,
-    query: String,
-    running: Boolean,
-    done: Int,
+private fun PhoneSearchLayout(
+    input: String,
     sitesCount: Int,
-    results: Map<String, List<com.me.ubox.data.VodItem>>,
-    filter: String?,
     hotWords: List<String>,
+    hotLoading: Boolean,
+    history: List<String>,
+    inputFocusRequester: FocusRequester,
+    initialQuery: String,
+    onInputChange: (String) -> Unit,
+    onSubmitQuery: () -> Unit,
     onPickWord: (String) -> Unit,
-    onOpenDetail: (String, String, String) -> Unit,
+    onClearHistory: () -> Unit,
+    onBack: () -> Unit,
 ) {
-    if (query.isEmpty() && !running) {
-        if (tv) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = "用左侧键盘输入, 或按\"远程搜索\"",
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(24.dp),
-                )
-            }
-            return
+    // 无初始词时自动聚焦输入框 (对照原版 autofocus).
+    LaunchedEffect(Unit) {
+        if (initialQuery.isEmpty()) {
+            try { inputFocusRequester.requestFocus() } catch (_: IllegalStateException) {}
         }
+    }
+    androidx.compose.material3.Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Box(
+                        modifier = Modifier
+                            .height(40.dp)
+                            .border(
+                                width = 1.2.dp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                shape = RoundedCornerShape(20.dp),
+                            )
+                            .padding(horizontal = 16.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = onInputChange,
+                            singleLine = true,
+                            placeholder = { Text("搜索影片 / 演员 / 关键词") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(inputFocusRequester),
+                            keyboardActions = KeyboardActions(
+                                onSearch = { onSubmitQuery() },
+                            ),
+                            keyboardOptions = KeyboardOptions(
+                                imeAction = ImeAction.Search,
+                            ),
+                            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
+                            ),
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBackIosNew, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onSubmitQuery) {
+                        Icon(Icons.Filled.Search, contentDescription = "搜索")
+                    }
+                },
+            )
+        },
+    ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.padding(padding).fillMaxSize(),
             contentPadding = PaddingValues(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             item {
                 Text(
@@ -354,11 +282,18 @@ private fun SearchBody(
                     textAlign = TextAlign.Center,
                 )
             }
-            if (hotWords.isNotEmpty()) {
-                item {
-                    Spacer(Modifier.height(20.dp))
-                    Text("热词", fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
+            item {
+                Spacer(Modifier.height(20.dp))
+                Text("热词", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                if (hotLoading) {
+                    CircularProgressIndicator(
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.width(20.dp).height(20.dp),
+                    )
+                } else if (hotWords.isEmpty()) {
+                    Text("暂无热词", color = Color.Gray)
+                } else {
                     FlowRow(
                         horizontalArrangement = Arrangement.Center,
                         modifier = Modifier.fillMaxWidth(),
@@ -380,52 +315,37 @@ private fun SearchBody(
                     }
                 }
             }
-        }
-        return
-    }
-    val flat = vm.flatten()
-    Column(modifier = Modifier.fillMaxSize()) {
-        if (running) {
-            LinearProgressIndicator(
-                progress = { if (sitesCount > 0) done.toFloat() / sitesCount else 0f },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(3.dp),
-            )
-        } else {
-            Spacer(Modifier.height(3.dp))
-        }
-        if (results.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(if (running) "正在搜索 (\"$query\") ..." else "没有搜索结果")
-            }
-            return@Column
-        }
-        Row(modifier = Modifier.fillMaxSize()) {
-            // 左侧: "全部" + 有结果的源
-            Box(modifier = Modifier.width(118.dp)) {
-                SiteFilterList(
-                    sites = vm.sitesWithResults(),
-                    filter = filter,
-                    onFilter = vm::setFilter,
-                )
-            }
-            Box(modifier = Modifier.weight(1f)) {
-                if (flat.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(if (running) "正在搜索 ..." else "没有搜索结果")
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 4.dp, top = 4.dp, end = 10.dp, bottom = 12.dp),
+            if (history.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(20.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        items(flat) { hit ->
-                            SearchResultRow(
-                                hit = hit,
-                                tv = tv,
-                                autofocus = tv && vm.focusFirstResult.value && flat.firstOrNull() === hit,
-                                onClick = { onOpenDetail(hit.site.key, hit.item.id, hit.item.name) },
+                        Text("搜索历史", fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            text = "清除",
+                            color = Color.Gray,
+                            modifier = Modifier
+                                .clickable(onClick = onClearHistory)
+                                .padding(6.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    FlowRow(modifier = Modifier.fillMaxWidth()) {
+                        for (w in history) {
+                            FilterChip(
+                                selected = false,
+                                onClick = { onPickWord(w) },
+                                label = {
+                                    Text(
+                                        text = w,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
+                                modifier = Modifier.padding(4.dp),
                             )
                         }
                     }
@@ -435,138 +355,226 @@ private fun SearchBody(
     }
 }
 
-@Composable
-private fun SiteFilterList(
-    sites: List<Site>,
-    filter: String?,
-    onFilter: (String?) -> Unit,
-) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 6.dp, top = 4.dp, end = 4.dp, bottom = 12.dp),
-    ) {
-        item {
-            SiteFilterTile(
-                name = "全部",
-                selected = filter == null,
-                onClick = { onFilter(null) },
-            )
-        }
-        items(sites) { site ->
-            SiteFilterTile(
-                name = site.name,
-                selected = filter == site.key,
-                onClick = { onFilter(site.key) },
-            )
-        }
-    }
-}
+// ---------------------------------------------------------------- 平板
 
+/**
+ * 平板搜索页 (无屏显键盘, 点击搜索框唤软键盘):
+ * 顶部 指定搜索源 + 搜索框 + 搜索按钮; 下方 热门搜索 | 搜索历史 左右排布.
+ */
 @Composable
-private fun SiteFilterTile(
-    name: String,
-    selected: Boolean,
-    onClick: () -> Unit,
+private fun PadSearchLayout(
+    searchSiteName: String,
+    input: String,
+    onInputChange: (String) -> Unit,
+    onSubmitQuery: () -> Unit,
+    onPickSearchSite: () -> Unit,
+    hotWords: List<String>,
+    hotLoading: Boolean,
+    history: List<String>,
+    onPickWord: (String) -> Unit,
+    onClearHistory: () -> Unit,
+    onBack: () -> Unit,
 ) {
-    val scheme = MaterialTheme.colorScheme
-    Box(
+    Column(
         modifier = Modifier
-            .padding(vertical = 3.dp)
-            .fillMaxWidth()
-            .border(
-                width = if (selected) 1.5.dp else 0.dp,
-                color = if (selected) scheme.onSurface else Color.Transparent,
-                shape = RoundedCornerShape(12.dp),
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TvButton(
+                label = searchSiteName,
+                icon = Icons.Filled.Tune,
+                height = 52.dp,
+                fontSize = 17,
+                onTap = onPickSearchSite,
             )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 14.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = name,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
-        )
-    }
-}
-
-/** 右侧: 封面 + 片名 + 源站蓝标 + 备注. */
-@Composable
-private fun SearchResultRow(
-    hit: SearchHit,
-    tv: Boolean,
-    autofocus: Boolean,
-    onClick: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    TvFocusable(
-        autofocus = autofocus,
-        radius = 8.dp,
-        onTap = onClick,
-        modifier = Modifier.padding(vertical = 4.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0x6C3D3D3D), RoundedCornerShape(8.dp))
-                .padding(all = 8.dp),
-        ) {
+            Spacer(Modifier.width(10.dp))
+            OutlinedTextField(
+                value = input,
+                onValueChange = onInputChange,
+                singleLine = true,
+                placeholder = { Text("搜索影片 / 演员 / 关键词") },
+                keyboardActions = KeyboardActions(onSearch = { onSubmitQuery() }),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(10.dp))
+            TvButton(
+                label = "搜索",
+                icon = Icons.Filled.Search,
+                height = 52.dp,
+                fontSize = 18,
+                selected = true,
+                onTap = onSubmitQuery,
+            )
+            Spacer(Modifier.width(10.dp))
+            TvButton(
+                label = "返回",
+                height = 52.dp,
+                fontSize = 16,
+                onTap = onBack,
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(modifier = Modifier.fillMaxSize()) {
+            PadWordColumn(
+                title = "热门搜索",
+                words = hotWords,
+                loading = hotLoading,
+                emptyText = "暂无热词",
+                onPickWord = onPickWord,
+                modifier = Modifier.weight(1f),
+            )
             Box(
                 modifier = Modifier
-                    .width(110.dp)
-                    .height(150.dp)
-                    .clip(RoundedCornerShape(6.dp)),
-            ) {
-                NetworkImage(
-                    url = hit.item.cover,
-                    modifier = Modifier.fillMaxSize(),
+                    .width(1.dp)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.outlineVariant),
+            )
+            PadWordColumn(
+                title = "搜索历史",
+                words = history,
+                loading = false,
+                emptyText = "暂无搜索历史",
+                onPickWord = onPickWord,
+                onClear = onClearHistory,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PadWordColumn(
+    title: String,
+    words: List<String>,
+    loading: Boolean,
+    emptyText: String,
+    onPickWord: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    onClear: (() -> Unit)? = null,
+) {
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
+            )
+            if (onClear != null && words.isNotEmpty()) {
+                Spacer(Modifier.weight(1f))
+                TvButton(
+                    label = "清空",
+                    height = 40.dp,
+                    fontSize = 14,
+                    onTap = onClear,
+                    modifier = Modifier.padding(end = 8.dp),
                 )
             }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = hit.item.name,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.W500,
-                    ),
+        }
+        when {
+            loading -> Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.width(20.dp).height(20.dp),
                 )
-                Spacer(Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .background(scheme.primary, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                ) {
-                    Text(
-                        text = hit.site.name,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = scheme.onPrimary,
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-                val remark = hit.item.remark
-                if (!remark.isNullOrEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = remark,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        color = Color.Gray,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+            }
+            words.isEmpty() -> Text(
+                text = emptyText,
+                color = Color.Gray,
+                modifier = Modifier.padding(start = 8.dp, top = 4.dp),
+            )
+            else -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+            ) {
+                items(words) { w ->
+                    Box(modifier = Modifier.padding(vertical = 4.dp)) {
+                        WordPill(word = w, onPick = { onPickWord(w) })
+                    }
                 }
             }
         }
     }
 }
 
-// ---------------------------------------------------------------- TV 左栏: 键盘
+// ---------------------------------------------------------------- TV (三栏, 对照原版 activity_search)
+
+/**
+ * TV 搜索页三栏 (对照原版 activity_search.xml 的横排布局):
+ * 左栏 vs_420 (指定搜索源 + 输入框 + 搜索/清空 + 屏显键盘) |
+ * 中栏 vs_270 (热门/猜你想搜) | 右栏 (历史网格, 对照原版 historyWordGrid).
+ */
+@Composable
+private fun TvSearchLayout(
+    searchSiteName: String,
+    input: String,
+    inputFocusRequester: FocusRequester,
+    onInputChange: (String) -> Unit,
+    onSubmitQuery: () -> Unit,
+    onClearInput: () -> Unit,
+    onPickSearchSite: () -> Unit,
+    hotWords: List<String>,
+    hotLoading: Boolean,
+    suggestions: List<String>,
+    history: List<String>,
+    onPickWord: (String) -> Unit,
+    onClearHistory: () -> Unit,
+) {
+    // TV: 无软键盘, 输入框自动获焦, 遥控器下键即可移到键盘按键.
+    LaunchedEffect(Unit) {
+        try { inputFocusRequester.requestFocus() } catch (_: IllegalStateException) {}
+    }
+    Row(modifier = Modifier.fillMaxSize()) {
+        // 左栏: 指定搜索源 + 输入框 + 搜索/清空 + 屏显键盘
+        Box(modifier = Modifier.width(430.dp)) {
+            TvLeftPanel(
+                searchSiteName = searchSiteName,
+                input = input,
+                inputFocusRequester = inputFocusRequester,
+                onInputChange = onInputChange,
+                onSearch = onSubmitQuery,
+                onClear = onClearInput,
+                onPickSearchSite = onPickSearchSite,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.outlineVariant),
+        )
+        // 中栏: 热门 / 猜你想搜 (输入首字母后热门这一栏改为猜你想搜)
+        Box(modifier = Modifier.width(240.dp)) {
+            TvWordPanel(
+                title = if (suggestions.isNotEmpty()) "猜你 想搜" else "热  门",
+                words = if (suggestions.isNotEmpty()) suggestions else hotWords,
+                loading = suggestions.isEmpty() && hotLoading,
+                onPick = onPickWord,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .width(1.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.outlineVariant),
+        )
+        // 右栏: 历史 (对照原版 llHistoryWord: 标题 + 清空 + 3 列网格)
+        Box(modifier = Modifier.weight(1f)) {
+            TvHistoryPanel(
+                history = history,
+                onPick = onPickWord,
+                onClear = onClearHistory,
+            )
+        }
+    }
+}
 
 /** 屏显键盘 (对照原版 SearchKeyboard: 远程搜索/删除 各占半行 + A-Z + 0-9). */
 private val keyboardKeys: List<String> = buildList {
@@ -580,14 +588,13 @@ private val keyboardKeys: List<String> = buildList {
 private fun TvLeftPanel(
     searchSiteName: String,
     input: String,
-    inputFocused: Boolean,
     inputFocusRequester: FocusRequester,
-    onInputFocusChanged: (Boolean) -> Unit,
     onInputChange: (String) -> Unit,
     onSearch: () -> Unit,
     onClear: () -> Unit,
     onPickSearchSite: () -> Unit,
 ) {
+    var inputFocused by remember { mutableStateOf(false) }
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -617,7 +624,7 @@ private fun TvLeftPanel(
                     .padding(horizontal = 14.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                androidx.compose.foundation.text.BasicTextField(
+                BasicTextField(
                     value = input,
                     onValueChange = onInputChange,
                     singleLine = true,
@@ -626,7 +633,7 @@ private fun TvLeftPanel(
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(Color.White),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .onFocusChanged { onInputFocusChanged(it.isFocused) },
+                        .onFocusChanged { inputFocused = it.isFocused },
                     decorationBox = { inner ->
                         if (input.isEmpty()) {
                             Text(
@@ -720,18 +727,18 @@ private fun KeyBtn(
     }
 }
 
-// ---------------------------------------------------------------- TV 中栏: 热词
+// ---------------------------------------------------------------- TV 中栏: 热门 / 猜你想搜
 
 @Composable
-private fun HotWordPanel(
-    tv: Boolean,
-    loading: Boolean,
+private fun TvWordPanel(
+    title: String,
     words: List<String>,
+    loading: Boolean,
     onPick: (String) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
-            text = "热词",
+            text = title,
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp),
         )
@@ -743,7 +750,7 @@ private fun HotWordPanel(
         }
         if (words.isEmpty()) {
             Text(
-                text = "暂无热词",
+                text = "暂无词语",
                 color = Color.Gray,
                 modifier = Modifier.padding(12.dp),
             )
@@ -755,28 +762,92 @@ private fun HotWordPanel(
         ) {
             items(words) { w ->
                 Box(modifier = Modifier.padding(vertical = 3.dp)) {
-                    TvFocusable(radius = 20.dp, onTap = { onPick(w) }) {
-                        Box(
-                            modifier = Modifier
-                                .height(50.dp)
-                                .fillMaxWidth()
-                                .background(Color(0x6C3D3D3D), RoundedCornerShape(20.dp))
-                                .padding(horizontal = 16.dp),
-                            contentAlignment = Alignment.CenterStart,
-                        ) {
-                            Text(
-                                text = w,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = Color.White,
-                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
-                            )
-                        }
-                    }
+                    WordPill(word = w, onPick = { onPick(w) })
                 }
             }
         }
     }
 }
 
-/** BasicTextField 焦点变化修饰 (TV 输入框白描边) — 见 TvLeftPanel 中的 onFocusChanged 用法. */
+// ---------------------------------------------------------------- TV 右栏: 历史
+
+@Composable
+private fun TvHistoryPanel(
+    history: List<String>,
+    onPick: (String) -> Unit,
+    onClear: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "历  史",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Spacer(Modifier.weight(1f))
+            if (history.isNotEmpty()) {
+                TvButton(
+                    label = "清空",
+                    height = 40.dp,
+                    fontSize = 14,
+                    onTap = onClear,
+                )
+            }
+        }
+        if (history.isEmpty()) {
+            Text(
+                text = "暂无搜索历史",
+                color = Color.Gray,
+                modifier = Modifier.padding(12.dp),
+            )
+            return@Column
+        }
+        // 3 列网格 (对照原版 historyWordGrid columnCount=3).
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(3),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(history) { w ->
+                WordPill(word = w, onPick = { onPick(w) }, height = 46.dp, fontSize = 15)
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- 共用词条
+
+/** 词条胶囊 (热门/猜你想搜/历史 共用; TV 遥控器与平板触摸均可). */
+@Composable
+private fun WordPill(
+    word: String,
+    onPick: () -> Unit,
+    modifier: Modifier = Modifier,
+    height: Dp = 50.dp,
+    fontSize: Int = 16,
+) {
+    TvFocusable(radius = 20.dp, onTap = onPick, modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .height(height)
+                .fillMaxWidth()
+                .background(Color(0x6C3D3D3D), RoundedCornerShape(20.dp))
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Text(
+                text = word,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = Color.White,
+                style = MaterialTheme.typography.bodyLarge.copy(fontSize = fontSize.sp),
+            )
+        }
+    }
+}

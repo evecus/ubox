@@ -108,6 +108,7 @@ object AppShell {
     val liveFullscreen: StateFlow<Boolean> = _liveFullscreen.asStateFlow()
 
     const val SETTINGS_TAB = 1
+    const val HOME_TAB = 0
 
     fun selectTab(i: Int) {
         _tabIndex.value = i
@@ -148,9 +149,21 @@ sealed class Route {
         val initialTid: String = "",
     ) : Route()
 
+    /**
+     * 搜索页: 只负责输入与词面 (热门/猜你想搜/历史);
+     * [initialQuery] 非空 + [autoSearch] = true 时进入即搜索并推结果页
+     * (首页热播条目跳转); 从结果页返回时路由已回填输入词, [autoSearch] = false.
+     */
     data class Search(
-        val siteKey: String? = null,
         val initialQuery: String = "",
+        val searchSiteKey: String? = null,
+        val autoSearch: Boolean = true,
+    ) : Route()
+
+    /** 搜索结果页: 与搜索页分离, TV/平板为多列网格, 手机为单列列表. */
+    data class SearchResults(
+        val query: String,
+        val searchSiteKey: String? = null,
     ) : Route()
 
     /** 收藏页: 独立页面, 不带导航栏 (同搜索页). */
@@ -224,8 +237,8 @@ fun UBoxApp() {
             onOpenDetail = { siteKey, vodId, name ->
                 backStack.add(Route.Detail(siteKey, vodId, name))
             },
-            onOpenSearch = { siteKey, q ->
-                backStack.add(Route.Search(siteKey, q))
+            onOpenSearch = { q ->
+                backStack.add(Route.Search(initialQuery = q, autoSearch = q.isNotEmpty()))
             },
             onOpenBrowse = { siteKey, tid ->
                 backStack.add(Route.Browse(siteKey, tid))
@@ -233,6 +246,7 @@ fun UBoxApp() {
             onOpenFavorites = { backStack.add(Route.Favorites) },
             onOpenHistory = { backStack.add(Route.History) },
             onOpenLive = { backStack.add(Route.Live) },
+            onOpenSettings = { AppShell.selectTab(AppShell.SETTINGS_TAB) },
             onOpenPlayer = { siteKey, vodId, name, cover, flag, epNames, epUrls, startIndex ->
                 backStack.add(
                     Route.Player(siteKey, vodId, name, cover, flag, epNames, epUrls, startIndex)
@@ -272,8 +286,30 @@ fun UBoxApp() {
 
         is Route.Search -> RouteOwned {
             com.me.ubox.ui.search.SearchScreen(
-                siteKey = route.siteKey,
                 initialQuery = route.initialQuery,
+                searchSiteKey = route.searchSiteKey,
+                autoSearch = route.autoSearch,
+                onBack = { backStack.removeAt(backStack.size - 1) },
+                onSubmit = { q, siteKey ->
+                    // 回填搜索页路由条目 (从结果页返回时恢复输入词与指定搜索源,
+                    // 对照原版 etSearch 保留已搜文本), 再推结果页.
+                    val idx = backStack.indexOfFirst { it is Route.Search }
+                    if (idx >= 0) {
+                        backStack[idx] = Route.Search(
+                            initialQuery = q,
+                            searchSiteKey = siteKey,
+                            autoSearch = false,
+                        )
+                    }
+                    backStack.add(Route.SearchResults(query = q, searchSiteKey = siteKey))
+                },
+            )
+        }
+
+        is Route.SearchResults -> RouteOwned {
+            com.me.ubox.ui.search.SearchResultsScreen(
+                searchSiteKey = route.searchSiteKey,
+                query = route.query,
                 onBack = { backStack.removeAt(backStack.size - 1) },
                 onOpenDetail = { siteKey, vodId, name ->
                     backStack.add(Route.Detail(siteKey, vodId, name))
@@ -348,7 +384,8 @@ private val tabSpecs = listOf(
 
 /**
  * 应用外壳 (对照 Flutter 版 RootPage):
- *   手机 = 底部导航; TV = 左侧导航栏 + 大字号标题行.
+ *   手机 = 底部导航; 平板 = 左侧导航栏; TV (遥控器) = 无左侧栏,
+ *   设置入口在首页右上角 (与 搜索/收藏/历史/直播 同排), 设置页顶部有返回首页.
  * 直播全屏时收起导航栏 (对照原版全屏直播).
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -356,11 +393,12 @@ private val tabSpecs = listOf(
 fun MainShell(
     tv: Boolean,
     onOpenDetail: (String, String, String) -> Unit,
-    onOpenSearch: (String?, String) -> Unit,
+    onOpenSearch: (String) -> Unit,
     onOpenBrowse: (String, String) -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenLive: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenPlayer: (String, String, String, String, String, List<String>, List<String>, Int) -> Unit,
 ) {
     val tab by AppShell.tabIndex.collectAsStateWithLifecycle()
@@ -378,6 +416,7 @@ fun MainShell(
                 onOpenFavorites = onOpenFavorites,
                 onOpenHistory = onOpenHistory,
                 onOpenLive = onOpenLive,
+                onOpenSettings = onOpenSettings,
                 onOpenPlayer = onOpenPlayer,
             )
         },
@@ -416,7 +455,7 @@ fun MainShell(
         return
     }
 
-    // ---------------- TV: 左侧导航栏 ----------------
+    // ---------------- TV 布局: 左侧栏仅平板保留; 真 TV (遥控器) 无左侧栏 ----------------
     // KeepAliveStack 只在这一处调用: 全屏切换只增减 rail/标题行 (条件块不影响其后
     // 组合槽位), 页面组合不销毁 (对照 Flutter 版 _stackKey GlobalKey 的作用).
     // 全屏 (直播): 收起导航栏与标题栏, 页面铺满整屏.
@@ -434,13 +473,16 @@ fun MainShell(
                 }
             ),
     ) {
-        TvRail(
-            tab = tab,
-            autofocus = !railFocusedOnce,
-            onFocused = { railFocusedOnce = true },
-            onSelect = { AppShell.selectTab(it) },
-        )
-        VerticalDivider(thickness = 1.dp)
+        // 左侧栏是平板专属; 真 TV 的设置入口在首页右上角 (见 HomeTopBar).
+        if (!remote) {
+            TvRail(
+                tab = tab,
+                autofocus = !railFocusedOnce,
+                onFocused = { railFocusedOnce = true },
+                onSelect = { AppShell.selectTab(it) },
+            )
+            VerticalDivider(thickness = 1.dp)
+        }
         Column(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.fillMaxSize()) {
                 KeepAliveStack(index = tab, pages = pages)

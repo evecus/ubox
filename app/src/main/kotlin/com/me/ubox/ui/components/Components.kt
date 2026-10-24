@@ -416,13 +416,14 @@ fun VodPoster(
     badgeText: String? = null,
     badgeBg: Color = Color(0xBD0CADE2),
     tvSizes: Boolean = false,
+    autofocus: Boolean = false,
 ) {
     var note = item.remark?.trim() ?: ""
     if (note.isEmpty() && !item.score.isNullOrEmpty()) {
         note = "评分 ${item.score}"
     }
     val year = item.year?.trim() ?: ""
-    TvFocusable(onTap = onClick, modifier = modifier, radius = 8.dp) {
+    TvFocusable(onTap = onClick, modifier = modifier, radius = 8.dp, autofocus = autofocus) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
