@@ -13,7 +13,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -415,7 +420,20 @@ fun MainShell(
     // KeepAliveStack 只在这一处调用: 全屏切换只增减 rail/标题行 (条件块不影响其后
     // 组合槽位), 页面组合不销毁 (对照 Flutter 版 _stackKey GlobalKey 的作用).
     // 全屏 (直播): 收起导航栏与标题栏, 页面铺满整屏.
-    Row(modifier = Modifier.fillMaxSize()) {
+    // 平板 (TV 布局 + 触摸) 的系统状态栏/导航栏是可见的, 这里没有 Scaffold 帮忙避让,
+    // 必须自己让出系统栏 + 刘海区域; 真 TV 无系统栏 (且需要铺满), 不加.
+    val remote by TvMode.isRemote.collectAsStateWithLifecycle()
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .then(
+                if (remote) {
+                    Modifier
+                } else {
+                    Modifier.windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
+                }
+            ),
+    ) {
         TvRail(
             tab = tab,
             autofocus = !railFocusedOnce,
