@@ -44,10 +44,11 @@ class PlayerViewModel(
     /** 当前站点 (配置可能在播放期间被清除, 允许为空). */
     private val site: Site? = com.me.ubox.data.ConfigStore.loaded.value?.sites?.firstOrNull { it.key == siteKey }
 
+    /** 解码方式 (设置页 → 解码方式): 硬解 / 软解 / 自动 (先硬后软). */
+    private val decoder = com.me.ubox.player.DecoderController()
+
     @androidx.annotation.OptIn(UnstableApi::class)
-    val player: ExoPlayer = ExoPlayer.Builder(Ctx.app)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(PlayerDataSourceFactory))
-        .build()
+    val player: ExoPlayer = decoder.createPlayer()
 
     private val _idx = MutableStateFlow(startIndex.coerceIn(0, (epUrls.size - 1).coerceAtLeast(0)))
     val idx: StateFlow<Int> = _idx.asStateFlow()
@@ -118,11 +119,26 @@ class PlayerViewModel(
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                // 自动模式: 解码器相关错误先切软解重试, 不算失败.
+                if (decoder.onPlayerError(player, error)) return
                 _loading.value = false
                 val cause = generateSequence<Throwable>(error) { it.cause }.last()
                 _error.value = "播放初始化失败: ${error.errorCodeName}\n" +
                     "${cause.javaClass.simpleName}: ${cause.message ?: ""}\n" +
+                    "解码方式: ${decoder.describe()}\n" +
                     player.currentMediaItem?.localConfiguration?.uri?.toString().orEmpty()
+            }
+
+            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                when (decoder.onTracks(player, tracks)) {
+                    com.me.ubox.player.DecoderController.TracksCheck.UNSUPPORTED -> {
+                        // 硬解/软解模式没有可用解码器: 不要悄悄只放声音, 明确报错.
+                        player.stop()
+                        _loading.value = false
+                        _error.value = decoder.unsupportedMessage()
+                    }
+                    else -> Unit
+                }
             }
 
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
@@ -230,6 +246,7 @@ class PlayerViewModel(
                 .setUri(info.url)
                 .apply { inferMimeType(info.url)?.let { setMimeType(it) } }
                 .build()
+            decoder.newItem()
             player.setMediaItem(mediaItem)
             player.prepare()
             if (restorePos > 0) {

@@ -67,10 +67,11 @@ class LiveViewModel : ViewModel() {
     private var needManualPlay = false
 
     // ---- 播放器 (ExoPlayer) ----
+    /** 解码方式 (设置页 → 解码方式): 硬解 / 软解 / 自动 (先硬后软). */
+    private val decoder = com.me.ubox.player.DecoderController()
+
     @androidx.annotation.OptIn(UnstableApi::class)
-    val player: ExoPlayer = ExoPlayer.Builder(Ctx.app)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(PlayerDataSourceFactory))
-        .build()
+    val player: ExoPlayer = decoder.createPlayer()
 
     private val _playing = MutableStateFlow(false)
     val playing: StateFlow<Boolean> = _playing.asStateFlow()
@@ -141,8 +142,19 @@ class LiveViewModel : ViewModel() {
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                // 自动模式: 解码器相关错误先切软解重试, 不算失败.
+                if (decoder.onPlayerError(player, error)) return
                 // 对照 STATE_ERROR: 3.5s 后换源
                 scheduleErrorRetry()
+            }
+
+            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                // 硬解/软解模式没有可用的视频解码器 -> 按失败处理 (同样 3.5s 后换源), 不悄悄只放声音.
+                if (decoder.onTracks(player, tracks) ==
+                    com.me.ubox.player.DecoderController.TracksCheck.UNSUPPORTED
+                ) {
+                    scheduleErrorRetry()
+                }
             }
 
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
@@ -295,6 +307,7 @@ class LiveViewModel : ViewModel() {
             .setUri(item.url)
             .apply { inferMimeType(item.url)?.let { setMimeType(it) } }
             .build()
+        decoder.newItem()
         player.setMediaItem(mediaItem)
         player.prepare()
         player.play()

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
@@ -106,6 +107,8 @@ fun SettingsScreen() {
     var showImport by remember { mutableStateOf(false) }
     var showHomeRecPicker by remember { mutableStateOf(false) }
     var showTvModePicker by remember { mutableStateOf(false) }
+    var showDecoderPicker by remember { mutableStateOf(false) }
+    val decoderMode by com.me.ubox.player.DecoderPrefs.mode.collectAsStateWithLifecycle()
     var showDanmuSetting by remember { mutableStateOf(false) }
     var showDanmuApi by remember { mutableStateOf(false) }
     var showEngineLog by remember { mutableStateOf(false) }
@@ -322,6 +325,25 @@ fun SettingsScreen() {
         )
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+        // ---------------- 播放 ----------------
+        SectionHeader("播放")
+        Spacer(Modifier.height(6.dp))
+        ListItem(
+            headlineContent = { Text("解码方式") },
+            supportingContent = {
+                Text(
+                    "${com.me.ubox.player.DecoderPrefs.label(decoderMode)}: " +
+                        com.me.ubox.player.DecoderPrefs.description(decoderMode) +
+                        " (点播与直播通用, 下次开始播放时生效)"
+                )
+            },
+            leadingContent = { Icon(Icons.Filled.Memory, contentDescription = null) },
+            trailingContent = { Icon(Icons.Filled.Tune, contentDescription = null) },
+            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.clickableSetting { showDecoderPicker = true },
+        )
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
         // ---------------- 弹幕 ----------------
         // 弹幕区: revision 变化时重读设置 (对照 Flutter ValueListenableBuilder(revision)).
         SectionHeader("弹幕")
@@ -481,6 +503,26 @@ fun SettingsScreen() {
                 TvMode.setOverride(picked)
             },
             onDismiss = { showTvModePicker = false },
+        )
+    }
+    if (showDecoderPicker) {
+        val options = listOf(
+            com.me.ubox.player.DecoderPrefs.HARD,
+            com.me.ubox.player.DecoderPrefs.SOFT,
+            com.me.ubox.player.DecoderPrefs.AUTO,
+        )
+        SinglePickSheet(
+            title = "解码方式",
+            items = options,
+            labelOf = { com.me.ubox.player.DecoderPrefs.label(it) },
+            subtitleOf = { com.me.ubox.player.DecoderPrefs.description(it) },
+            current = decoderMode,
+            isSelected = { it == decoderMode },
+            onPick = { picked ->
+                showDecoderPicker = false
+                com.me.ubox.player.DecoderPrefs.setMode(picked)
+            },
+            onDismiss = { showDecoderPicker = false },
         )
     }
     if (showDanmuSetting) {
