@@ -1,0 +1,18 @@
+allprojects {
+    repositories {
+        // 国内镜像: 代理 google/mavenCentral/gradlePluginPortal (sandbox 内 mavenCentral 直连不可达)
+        maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
+        // jcenter 镜像: DanmakuFlameMaster(弹幕大师) 0.9.25 只在 jcenter 发布
+        // (Maven Central 仅到 0.3.8, 腾讯镜像不代理 jcenter), 需阿里云 jcenter.
+        maven { url 'https://maven.aliyun.com/repository/jcenter' }
+        google()
+        mavenCentral()
+    }
+}
+
+// 仓库根即 Android 工程根: build 输出用 Gradle 默认位置 (根/build, app/build).
+// 旧的 rootProject.buildDir 重定向是 Flutter 嵌入时代的 hack, 已移除.
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
