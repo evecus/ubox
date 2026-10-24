@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material3.CircularProgressIndicator
@@ -80,6 +81,9 @@ fun HomeScreen(
     onOpenDetail: (String, String, String) -> Unit,
     onOpenSearch: (String?, String) -> Unit,
     onOpenBrowse: (String, String) -> Unit,
+    onOpenFavorites: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onOpenLive: () -> Unit,
     onOpenPlayer: (String, String, String, String, String, List<String>, List<String>, Int) -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
@@ -168,8 +172,9 @@ fun HomeScreen(
             onLineClick = { if (lines.size >= 2) showLinePicker = true },
             onSiteClick = { showSitePicker = true },
             onSearchClick = { onOpenSearch(site?.key, "") },
-            onFavoritesClick = { com.me.ubox.ui.AppShell.selectTab(2) },
-            onHistoryClick = { com.me.ubox.ui.AppShell.selectTab(3) },
+            onFavoritesClick = onOpenFavorites,
+            onHistoryClick = onOpenHistory,
+            onLiveClick = onOpenLive,
         )
         HomeTabBar(
             tabs = tabs,
@@ -278,7 +283,7 @@ private fun lineLabelOf(lines: List<ConfigLine>, config: com.me.ubox.data.Config
     return "线路"
 }
 
-/** 顶部: 线路 / 站源 / 搜索 / 收藏 / 历史 (TV 下为可聚焦 chip). */
+/** 顶部: 线路 / 站源 / 搜索 / 收藏 / 历史 / 直播 (TV 下为可聚焦 chip). */
 @Composable
 private fun HomeTopBar(
     tv: Boolean,
@@ -290,6 +295,7 @@ private fun HomeTopBar(
     onSearchClick: () -> Unit,
     onFavoritesClick: () -> Unit,
     onHistoryClick: () -> Unit,
+    onLiveClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -340,9 +346,12 @@ private fun HomeTopBar(
             TvButton(label = "收藏", icon = Icons.Outlined.StarBorder, height = 52.dp, onTap = onFavoritesClick)
             Spacer(Modifier.width(6.dp))
             TvButton(label = "历史", icon = Icons.Filled.History, height = 52.dp, onTap = onHistoryClick)
+            Spacer(Modifier.width(6.dp))
+            TvButton(label = "直播", icon = Icons.Filled.LiveTv, height = 52.dp, onTap = onLiveClick)
         } else {
             Icon(imageVector = Icons.Outlined.StarBorder, contentDescription = "收藏", modifier = Modifier.clickable(onClick = onFavoritesClick).padding(8.dp))
             Icon(imageVector = Icons.Filled.History, contentDescription = "历史", modifier = Modifier.clickable(onClick = onHistoryClick).padding(8.dp))
+            Icon(imageVector = Icons.Filled.LiveTv, contentDescription = "直播", modifier = Modifier.clickable(onClick = onLiveClick).padding(8.dp))
         }
     }
 }

@@ -14,19 +14,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.MovieFilter
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Favorite
-import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LiveTv
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -100,7 +95,7 @@ class MainActivity : ComponentActivity() {
 /** 应用外壳共享状态 (对照 Flutter 版 RootPage 的静态 notifier). */
 object AppShell {
 
-    /** 当前页签索引. 直播页监听它: 离开直播 tab 时停止播放; 直播页内也可反向写它跳转设置页. */
+    /** 当前页签索引 (首页 / 设置). 直播页内可写它跳转设置页 (NovaBoxApp 会同时关闭直播页). */
     private val _tabIndex = MutableStateFlow(0)
     val tabIndex: StateFlow<Int> = _tabIndex.asStateFlow()
 
@@ -108,8 +103,7 @@ object AppShell {
     private val _liveFullscreen = MutableStateFlow(false)
     val liveFullscreen: StateFlow<Boolean> = _liveFullscreen.asStateFlow()
 
-    const val LIVE_TAB = 1
-    const val SETTINGS_TAB = 4
+    const val SETTINGS_TAB = 1
 
     fun selectTab(i: Int) {
         _tabIndex.value = i
@@ -155,6 +149,15 @@ sealed class Route {
         val initialQuery: String = "",
     ) : Route()
 
+    /** 收藏页: 独立页面, 不带导航栏 (同搜索页). */
+    data object Favorites : Route()
+
+    /** 观看历史页: 独立页面, 不带导航栏 (同搜索页). */
+    data object History : Route()
+
+    /** 直播页: 独立页面, 不带导航栏 (同搜索页). */
+    data object Live : Route()
+
     data class Player(
         val siteKey: String,
         val vodId: String,
@@ -196,6 +199,11 @@ fun NovaBoxApp() {
     BackHandler(enabled = backStack.size > 1) {
         backStack.removeAt(backStack.size - 1)
     }
+    // 直播页内点"去设置": 页签切到设置 -> 关闭直播页, 回到外壳显示设置页.
+    val shellTab by AppShell.tabIndex.collectAsStateWithLifecycle()
+    LaunchedEffect(shellTab) {
+        if (backStack.last() is Route.Live) backStack.removeAt(backStack.size - 1)
+    }
     // 全局 Snackbar 覆盖层 (对照 Flutter 版 MaterialApp 级的 ScaffoldMessenger).
     val snackbarMessage by AppSnackbar.message.collectAsStateWithLifecycle()
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -218,6 +226,9 @@ fun NovaBoxApp() {
             onOpenBrowse = { siteKey, tid ->
                 backStack.add(Route.Browse(siteKey, tid))
             },
+            onOpenFavorites = { backStack.add(Route.Favorites) },
+            onOpenHistory = { backStack.add(Route.History) },
+            onOpenLive = { backStack.add(Route.Live) },
             onOpenPlayer = { siteKey, vodId, name, cover, flag, epNames, epUrls, startIndex ->
                 backStack.add(
                     Route.Player(siteKey, vodId, name, cover, flag, epNames, epUrls, startIndex)
@@ -266,6 +277,39 @@ fun NovaBoxApp() {
             )
         }
 
+        Route.Favorites -> RouteOwned {
+            com.me.ubox.ui.favorites.FavoritesScreen(
+                onBack = { backStack.removeAt(backStack.size - 1) },
+                onOpenDetail = { siteKey, vodId, name ->
+                    backStack.add(Route.Detail(siteKey, vodId, name))
+                },
+            )
+        }
+
+        Route.History -> RouteOwned {
+            com.me.ubox.ui.history.HistoryScreen(
+                onBack = { backStack.removeAt(backStack.size - 1) },
+                onOpenDetail = { siteKey, vodId, name ->
+                    backStack.add(Route.Detail(siteKey, vodId, name))
+                },
+            )
+        }
+
+        Route.Live -> RouteOwned {
+            // 独立页面: 无底部栏/左侧栏; 非全屏时自己让出系统栏, 全屏时铺满 (原先由外壳处理).
+            val liveFullscreen by AppShell.liveFullscreen.collectAsStateWithLifecycle()
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(if (liveFullscreen) Color.Black else Color.Transparent)
+                    .then(if (liveFullscreen) Modifier else Modifier.systemBarsPadding()),
+            ) {
+                com.me.ubox.ui.live.LiveScreen(
+                    onGoSettings = { AppShell.selectTab(AppShell.SETTINGS_TAB) },
+                )
+            }
+        }
+
         is Route.Player -> RouteOwned {
             com.me.ubox.ui.player.PlayerScreen(
                 siteKey = route.siteKey,
@@ -295,9 +339,6 @@ private data class TabSpec(
 
 private val tabSpecs = listOf(
     TabSpec(Icons.Outlined.Home, Icons.Filled.Home, "首页"),
-    TabSpec(Icons.Outlined.LiveTv, Icons.Filled.LiveTv, "直播"),
-    TabSpec(Icons.Outlined.Favorite, Icons.Filled.Favorite, "收藏"),
-    TabSpec(Icons.Outlined.History, Icons.Filled.History, "历史"),
     TabSpec(Icons.Outlined.Settings, Icons.Filled.Settings, "设置"),
 )
 
@@ -313,6 +354,9 @@ fun MainShell(
     onOpenDetail: (String, String, String) -> Unit,
     onOpenSearch: (String?, String) -> Unit,
     onOpenBrowse: (String, String) -> Unit,
+    onOpenFavorites: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onOpenLive: () -> Unit,
     onOpenPlayer: (String, String, String, String, String, List<String>, List<String>, Int) -> Unit,
 ) {
     val tab by AppShell.tabIndex.collectAsStateWithLifecycle()
@@ -328,22 +372,10 @@ fun MainShell(
                 onOpenDetail = onOpenDetail,
                 onOpenSearch = onOpenSearch,
                 onOpenBrowse = onOpenBrowse,
+                onOpenFavorites = onOpenFavorites,
+                onOpenHistory = onOpenHistory,
+                onOpenLive = onOpenLive,
                 onOpenPlayer = onOpenPlayer,
-            )
-        },
-        {
-            com.me.ubox.ui.live.LiveScreen(
-                onGoSettings = { AppShell.selectTab(AppShell.SETTINGS_TAB) },
-            )
-        },
-        {
-            com.me.ubox.ui.favorites.FavoritesScreen(
-                onOpenDetail = onOpenDetail,
-            )
-        },
-        {
-            com.me.ubox.ui.history.HistoryScreen(
-                onOpenDetail = onOpenDetail,
             )
         },
         {
@@ -422,7 +454,7 @@ private fun Modifier.blockPointerInput(): Modifier = pointerInput(Unit) {
 
 /**
  * 页签保活容器 (对照 Flutter IndexedStack + ExcludeFocus):
- * 5 个页面同时保持组合, 仅当前页可见 —— 切换页签不丢状态
+ * 2 个页面同时保持组合, 仅当前页可见 —— 切换页签不丢状态
  * (首页数据/滚动位置, 直播页播放进度与已拉取的源列表).
  *
  *   - 可见页在最上层 (zIndex), 不可见页 alpha=0 不绘制;

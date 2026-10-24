@@ -40,6 +40,7 @@ import com.me.ubox.data.Favorites
 import com.me.ubox.data.FavoriteItem
 import com.me.ubox.ui.AppSnackbar
 import com.me.ubox.ui.components.NetworkImage
+import com.me.ubox.ui.components.SimpleTopBar
 import com.me.ubox.ui.components.TvFocusable
 
 /**
@@ -48,6 +49,7 @@ import com.me.ubox.ui.components.TvFocusable
  */
 @Composable
 fun FavoritesScreen(
+    onBack: () -> Unit,
     onOpenDetail: (String, String, String) -> Unit,
 ) {
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
@@ -59,6 +61,23 @@ fun FavoritesScreen(
 
     LaunchedEffect(Unit) { reload() }
 
+    // 独立页面: 自带顶栏 + 返回, 不显示底部栏/左侧栏 (同搜索页).
+    androidx.compose.material3.Scaffold(
+        topBar = { SimpleTopBar(title = "收藏", onBack = onBack) },
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+            FavoritesContent(items = items, tv = tv, onOpenDetail = onOpenDetail, reload = ::reload)
+        }
+    }
+}
+
+@Composable
+private fun FavoritesContent(
+    items: List<FavoriteItem>?,
+    tv: Boolean,
+    onOpenDetail: (String, String, String) -> Unit,
+    reload: () -> Unit,
+) {
     val list = items
     if (list == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

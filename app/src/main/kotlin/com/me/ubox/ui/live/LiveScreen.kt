@@ -77,7 +77,6 @@ fun LiveScreen(
     vm: LiveViewModel = viewModel(),
 ) {
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
-    val tabIndex by AppShell.tabIndex.collectAsStateWithLifecycle()
     val groups by vm.groups.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val noSource by vm.noSource.collectAsStateWithLifecycle()
@@ -105,10 +104,8 @@ fun LiveScreen(
         com.me.ubox.data.live.LiveStore.liveUrlChanged.drop(1).collect { vm.onLiveUrlChanged() }
     }
 
-    // 切 Tab: 离开直播 tab 时停止播放 (对照 LiveFragment.onFragmentPause)
-    LaunchedEffect(tabIndex) {
-        if (tabIndex != AppShell.LIVE_TAB) vm.onTabChanged()
-    }
+    // 直播页已是独立路由: 退出页面 = 组合销毁 + per-route VM 清空 (onCleared 释放播放器),
+    // 不再需要按页签切换停播.
 
     // 沉浸式系统栏 (对照 Flutter live_page 的 6 处 SystemChrome 调用):
     // 全屏 (竖屏全屏/TV 全屏) = immersiveSticky; 退出全屏/切 Tab 复位 (liveFullscreen=false)/
