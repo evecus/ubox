@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -69,7 +68,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // TV 模式强制横屏 (对照 Flutter main.dart: sensorLandscape); 手机模式不限制方向.
+        // TV 与平板强制横屏; 手机模式不限制方向. (对照 Flutter main.dart: sensorLandscape); 手机模式不限制方向.
         applyOrientation(TvMode.isTV.value)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -360,7 +359,6 @@ fun MainShell(
     onOpenPlayer: (String, String, String, String, String, List<String>, List<String>, Int) -> Unit,
 ) {
     val tab by AppShell.tabIndex.collectAsStateWithLifecycle()
-    val fullscreen by AppShell.liveFullscreen.collectAsStateWithLifecycle()
     // 导航栏 autofocus 只在首次成功聚焦前生效: 刚退出直播全屏时导航栏重建,
     // 不能抢走直播页刚还回的焦点 (对照 Flutter 版 _wasFullscreen 的可观测行为;
     // 不用布尔翻转是因为 Compose 的 LaunchedEffect(autofocus) 会在值变化时重新请求).
@@ -387,30 +385,26 @@ fun MainShell(
         // ---------------- 手机: 底部导航 ----------------
         Scaffold(
             bottomBar = {
-                if (!fullscreen) {
-                    NavigationBar {
-                        tabSpecs.forEachIndexed { i, spec ->
-                            NavigationBarItem(
-                                selected = tab == i,
-                                onClick = { AppShell.selectTab(i) },
-                                icon = {
-                                    Icon(
-                                        imageVector = if (tab == i) spec.filledIcon else spec.outlinedIcon,
-                                        contentDescription = spec.label,
-                                    )
-                                },
-                                label = { Text(spec.label) },
-                            )
-                        }
+                NavigationBar {
+                    tabSpecs.forEachIndexed { i, spec ->
+                        NavigationBarItem(
+                            selected = tab == i,
+                            onClick = { AppShell.selectTab(i) },
+                            icon = {
+                                Icon(
+                                    imageVector = if (tab == i) spec.filledIcon else spec.outlinedIcon,
+                                    contentDescription = spec.label,
+                                )
+                            },
+                            label = { Text(spec.label) },
+                        )
                     }
                 }
             },
         ) { padding ->
-            Box(
-                modifier = Modifier
-                    .padding(padding)
-                    .then(if (fullscreen) Modifier else Modifier.statusBarsPadding()),
-            ) {
+            // Scaffold 的 padding 已包含状态栏 + 底部栏高度, 不能再叠加 statusBarsPadding
+            // (否则顶部会多出一截空白).
+            Box(modifier = Modifier.padding(padding)) {
                 KeepAliveStack(index = tab, pages = pages)
             }
         }
@@ -422,21 +416,15 @@ fun MainShell(
     // 组合槽位), 页面组合不销毁 (对照 Flutter 版 _stackKey GlobalKey 的作用).
     // 全屏 (直播): 收起导航栏与标题栏, 页面铺满整屏.
     Row(modifier = Modifier.fillMaxSize()) {
-        if (!fullscreen) {
-            TvRail(
-                tab = tab,
-                autofocus = !railFocusedOnce,
-                onFocused = { railFocusedOnce = true },
-                onSelect = { AppShell.selectTab(it) },
-            )
-            VerticalDivider(thickness = 1.dp)
-        }
+        TvRail(
+            tab = tab,
+            autofocus = !railFocusedOnce,
+            onFocused = { railFocusedOnce = true },
+            onSelect = { AppShell.selectTab(it) },
+        )
+        VerticalDivider(thickness = 1.dp)
         Column(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(if (fullscreen) Color.Black else Color.Transparent),
-            ) {
+            Box(modifier = Modifier.fillMaxSize()) {
                 KeepAliveStack(index = tab, pages = pages)
             }
         }

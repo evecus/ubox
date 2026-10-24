@@ -49,6 +49,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.KeyboardType
@@ -76,7 +80,9 @@ fun LiveScreen(
     onGoSettings: () -> Unit,
     vm: LiveViewModel = viewModel(),
 ) {
+    // tv = TV 布局 (TV 与平板共用); remote = 真遥控器 (平板为 false, 额外提供触摸手势).
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
+    val remote by TvMode.isRemote.collectAsStateWithLifecycle()
     val groups by vm.groups.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
     val noSource by vm.noSource.collectAsStateWithLifecycle()
@@ -136,6 +142,7 @@ fun LiveScreen(
             badgeVisible = badgeVisible,
             badgeName = badgeName,
             videoAspectRatio = videoAspectRatio,
+            touch = !remote,
             onPasswordNeeded = { showPasswordDialog = it },
         )
     } else {
@@ -583,6 +590,7 @@ private fun TvLiveLayout(
     badgeVisible: Boolean,
     badgeName: String,
     videoAspectRatio: Float,
+    touch: Boolean,
     onPasswordNeeded: (Int) -> Unit,
 ) {
     val loading by vm.loading.collectAsStateWithLifecycle()
@@ -596,6 +604,7 @@ private fun TvLiveLayout(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
+                .then(if (touch) Modifier.liveTouchGestures(vm = vm, panelVisible = tvPanel) else Modifier)
                 .focusable()
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -630,7 +639,9 @@ private fun TvLiveLayout(
                         .align(Alignment.CenterEnd)
                         .fillMaxHeight()
                         .width((340).dp)
-                        .background(Color(0xE6101418)),
+                        .background(Color(0xE6101418))
+                        // 面板空白处的点击不能穿透到下面的"点击收起面板"手势.
+                        .pointerInput(Unit) { detectTapGestures { } },
                 ) {
                     Column {
                         InfoBar(vm = vm, tv = true)
@@ -650,6 +661,18 @@ private fun TvLiveLayout(
                     }
                 }
             }
+            // 触摸 (平板): 面板显示时左上角给"退出全屏"按钮 (遥控器靠返回键).
+            if (touch && tvPanel) {
+                Box(modifier = Modifier.align(Alignment.TopStart).padding(16.dp)) {
+                    TvButton(
+                        label = "退出全屏",
+                        icon = Icons.Filled.FullscreenExit,
+                        height = 44.dp,
+                        fontSize = 15,
+                        onTap = { vm.exitTvFullscreen() },
+                    )
+                }
+            }
         }
         return
     }
@@ -660,6 +683,14 @@ private fun TvLiveLayout(
             modifier = Modifier
                 .weight(0.72f)
                 .fillMaxHeight()
+                // 触摸 (平板): 点击视频区域进入全屏 (遥控器靠 OK 键); 控制条按钮先消费自己的点击.
+                .then(
+                    if (touch) {
+                        Modifier.pointerInput(Unit) { detectTapGestures(onTap = { vm.enterTvFullscreen() }) }
+                    } else {
+                        Modifier
+                    }
+                )
                 .focusable()
                 .onPreviewKeyEvent { event ->
                     if (event.type == KeyEventType.KeyDown &&
@@ -694,4 +725,45 @@ private fun TvLiveLayout(
             }
         }
     }
+}
+
+
+/**
+ * 平板触摸手势 (对应遥控器在 TV 全屏直播里的按键):
+ *   单击画面 = 显示/收起右侧频道面板 (OK 键);
+ *   上滑 / 下滑 = 下一个 / 上一个频道 (方向键 下/上);
+ *   左滑 / 右滑 = 下一源 / 上一源 (方向键 右/左).
+ * 面板显示时只响应单击收起, 不响应滑动 (避免与列表滚动冲突).
+ */
+@Composable
+private fun Modifier.liveTouchGestures(vm: LiveViewModel, panelVisible: Boolean): Modifier {
+    val threshold = with(LocalDensity.current) { 80.dp.toPx() }
+    return this
+        .pointerInput(panelVisible) {
+            detectTapGestures(
+                onTap = { if (panelVisible) vm.hideTvPanel() else vm.showTvPanel() },
+            )
+        }
+        .pointerInput(panelVisible) {
+            if (panelVisible) return@pointerInput
+            var dx = 0f
+            var dy = 0f
+            detectDragGestures(
+                onDragStart = { dx = 0f; dy = 0f },
+                onDragEnd = {
+                    if (kotlin.math.abs(dy) >= kotlin.math.abs(dx)) {
+                        if (dy <= -threshold) vm.playAdjacentChannel(1)
+                        else if (dy >= threshold) vm.playAdjacentChannel(-1)
+                    } else {
+                        if (dx <= -threshold) vm.playNextSourceManual()
+                        else if (dx >= threshold) vm.playPreSourceManual()
+                    }
+                },
+                onDrag = { change, amount ->
+                    change.consume()
+                    dx += amount.x
+                    dy += amount.y
+                },
+            )
+        }
 }

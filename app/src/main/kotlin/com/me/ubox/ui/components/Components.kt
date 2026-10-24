@@ -186,7 +186,8 @@ fun TvFocusable(
     onFocusChanged: (Boolean) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
-    val tv by TvMode.isTV.collectAsStateWithLifecycle()
+    // 遥控器焦点交互只在真 TV 生效; 平板 (TV 布局 + 触摸) 与手机一样退化为普通点击.
+    val tv by TvMode.isRemote.collectAsStateWithLifecycle()
     // 所在页签不可见 (KeepAliveStack 的隐藏页) 时整体退出焦点遍历 (对照 Flutter ExcludeFocus).
     val focusEnabled = enabled && LocalPageVisible.current
     if (!tv) {

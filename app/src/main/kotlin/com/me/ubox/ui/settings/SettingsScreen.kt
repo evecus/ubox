@@ -82,6 +82,7 @@ import java.io.File
 @Composable
 fun SettingsScreen() {
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
+    val remoteMode by TvMode.isRemote.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -304,13 +305,13 @@ fun SettingsScreen() {
         SectionHeader("界面")
         Spacer(Modifier.height(6.dp))
         ListItem(
-            headlineContent = { Text("TV 模式") },
+            headlineContent = { Text("界面模式") },
             supportingContent = {
                 Text(
-                    if (tv) {
-                        "已开启 (${TvMode.overrideLabel(TvMode.override)}): 左侧导航 / 大网格 / 遥控器焦点"
-                    } else {
-                        "已关闭 (${TvMode.overrideLabel(TvMode.override)}): 底部导航 / 手机布局"
+                    when {
+                        remoteMode -> "${TvMode.currentLabel()}: 左侧导航 / 大网格 / 遥控器焦点 / 横屏"
+                        tv -> "${TvMode.currentLabel()}: 左侧导航 / 大网格 / 触摸操作 / 横屏"
+                        else -> "${TvMode.currentLabel()}: 底部导航 / 手机布局"
                     }
                 )
             },
@@ -468,9 +469,9 @@ fun SettingsScreen() {
         )
     }
     if (showTvModePicker) {
-        val options = listOf("auto", "on", "off")
+        val options = listOf("auto", "on", "pad", "off")
         SinglePickSheet(
-            title = "TV 模式",
+            title = "界面模式",
             items = options,
             labelOf = { TvMode.overrideLabel(it) },
             current = TvMode.override,
@@ -538,6 +539,7 @@ private fun SettingsActionButton(
     onClick: () -> Unit,
 ) {
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
+    val remote by TvMode.isRemote.collectAsStateWithLifecycle()
     val textStyle = if (tv) {
         MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp)
     } else {
@@ -546,23 +548,23 @@ private fun SettingsActionButton(
     val button: @Composable () -> Unit = {
         if (filled) {
             androidx.compose.material3.Button(
-                onClick = if (tv) ({}) else onClick,
-                enabled = enabled && !tv,
+                onClick = if (remote) ({}) else onClick,
+                enabled = enabled && !remote,
                 modifier = Modifier.height(if (tv) 48.dp else 40.dp),
             ) {
                 Text(label, style = textStyle ?: MaterialTheme.typography.bodyMedium)
             }
         } else {
             OutlinedButton(
-                onClick = if (tv) ({}) else onClick,
-                enabled = enabled && !tv,
+                onClick = if (remote) ({}) else onClick,
+                enabled = enabled && !remote,
                 modifier = Modifier.height(if (tv) 48.dp else 40.dp),
             ) {
                 Text(label, style = textStyle ?: MaterialTheme.typography.bodyMedium)
             }
         }
     }
-    if (!tv) {
+    if (!remote) {
         button()
         return
     }
@@ -574,23 +576,20 @@ private fun SettingsActionButton(
 /** ListItem 的可点击修饰 (手机模式); TV 下所在页签不可见时退出焦点遍历. */
 @Composable
 private fun Modifier.clickableSetting(onClick: () -> Unit): Modifier {
-    val tv by TvMode.isTV.collectAsStateWithLifecycle()
+    val tv by TvMode.isRemote.collectAsStateWithLifecycle()
     val guarded = this.pageFocusGuard()
     if (!tv) return guarded.clickable(onClick = onClick)
     // TV: 遥控器焦点显示白色描边 (默认 clickable 的焦点指示在深色背景下几乎看不见).
     val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
+    // 修饰链结构必须恒定: 原先焦点时在 clickable 之前插入 border, 修饰链结构变化会让
+    // clickable (focusable) 节点被重建 -> 焦点丢失 -> 描边消失, 表现为"没有焦点".
+    // 现在 clickable 在前、border 恒在后, 仅切换颜色.
     return guarded
-        .then(
-            if (focused) {
-                Modifier.border(
-                    2.dp,
-                    androidx.compose.ui.graphics.Color.White,
-                    androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-                )
-            } else {
-                Modifier
-            }
-        )
         .clickable(interactionSource = source, indication = null, onClick = onClick)
+        .border(
+            2.dp,
+            if (focused) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color.Transparent,
+            androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+        )
 }

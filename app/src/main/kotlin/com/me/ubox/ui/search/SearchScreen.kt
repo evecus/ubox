@@ -87,6 +87,7 @@ fun SearchScreen(
     }),
 ) {
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
+    val remote by TvMode.isRemote.collectAsStateWithLifecycle()
     val sites by vm.sites.collectAsStateWithLifecycle()
     val results by vm.results.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
@@ -211,8 +212,8 @@ fun SearchScreen(
 
     // ---------------- TV: 三栏 (键盘 / 热词 / 结果) ----------------
     // TV: 无软键盘, 输入框自动获焦, 遥控器下键即可移到键盘按键.
-    LaunchedEffect(tv) {
-        if (tv) {
+    LaunchedEffect(remote) {
+        if (remote) {
             try { inputFocusRequester.requestFocus() } catch (_: IllegalStateException) {}
         }
     }

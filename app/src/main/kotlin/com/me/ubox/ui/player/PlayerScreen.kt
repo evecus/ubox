@@ -62,6 +62,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
@@ -112,6 +115,7 @@ fun PlayerScreen(
         }
     ),
 ) {
+    // tv = TV 布局 (TV 与平板共用: 全屏视频 + 控制层); 平板没有遥控器, 额外靠触摸手势操作.
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
     val idx by vm.idx.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
@@ -145,13 +149,13 @@ fun PlayerScreen(
     LaunchedEffect(phoneFullscreen) {
         phoneContext.findActivity()?.requestedOrientation =
             if (phoneFullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            else TvMode.baseOrientation()
     }
     // 退出播放页时恢复系统方向 (防止全屏态离开后仍锁横屏).
     DisposableEffect(Unit) {
         onDispose {
-            phoneContext.findActivity()?.requestedOrientation =
-                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            // 复位到当前模式的基准方向 (TV/平板 = 横屏锁定, 手机 = 不限制).
+            phoneContext.findActivity()?.requestedOrientation = TvMode.baseOrientation()
         }
     }
 
@@ -337,6 +341,28 @@ fun PlayerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
+                // 触摸 (平板): 控制层显示时, 任意触摸给 8s 自动隐藏计时续命 (不消费事件);
+                // 单击画面 = 显示/隐藏控制层, 双击左半/右半 = 快退/快进 10s.
+                // 按钮/进度条先消费各自的点击, 不会触发这里的画面手势.
+                .pointerInput(overlay) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            // 只在手指按下时续命, 不对每个 move 事件重置计时.
+                            if (overlay && event.changes.any { it.pressed && !it.previousPressed }) {
+                                vm.showTvOverlay()
+                            }
+                        }
+                    }
+                }
+                .pointerInput(overlay) {
+                    detectTapGestures(
+                        onTap = { if (overlay) vm.hideTvOverlay() else vm.showTvOverlay() },
+                        onDoubleTap = { pos ->
+                            if (pos.x < size.width / 2f) vm.seekBy(-10) else vm.seekBy(10)
+                        },
+                    )
+                }
                 .focusable()
                 .onPreviewKeyEvent { event ->
                     if (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_MENU) {

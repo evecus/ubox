@@ -109,8 +109,8 @@ class SearchViewModel(
                 }
             }.awaitAll()
             _running.value = false
-            // TV 模式才把焦点移到第一条结果 (对照 Flutter TvMode.isTV.value 判断).
-            if (TvMode.isTV.value && _results.value.values.any { it.isNotEmpty() }) {
+            // 遥控器 (TV) 模式才把焦点移到第一条结果 (对照 Flutter TvMode.isTV.value 判断).
+            if (TvMode.isRemote.value && _results.value.values.any { it.isNotEmpty() }) {
                 _focusFirstResult.value = true
             }
         }
