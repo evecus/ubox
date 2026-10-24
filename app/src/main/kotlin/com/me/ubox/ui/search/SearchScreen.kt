@@ -641,6 +641,7 @@ private fun TvLeftPanel(
                     label = "搜索",
                     icon = Icons.Filled.Search,
                     modifier = Modifier.weight(1f),
+                    fillWidth = true,
                     height = 56.dp,
                     fontSize = 18,
                     selected = true,
@@ -650,6 +651,7 @@ private fun TvLeftPanel(
                 TvButton(
                     label = "清空",
                     modifier = Modifier.weight(1f),
+                    fillWidth = true,
                     height = 56.dp,
                     fontSize = 18,
                     onTap = onClear,

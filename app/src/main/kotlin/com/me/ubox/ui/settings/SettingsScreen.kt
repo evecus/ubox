@@ -2,7 +2,9 @@ package com.me.ubox.ui.settings
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -210,24 +212,24 @@ fun SettingsScreen() {
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
             SectionHeader("线路 (${currentLines.size})")
             for (line in currentLines) {
+                val switchLine: () -> Unit = {
+                    scope.launch {
+                        // 已在当前线路只提示 (对照 Flutter _switchLine: _say('当前已在 ...')).
+                        if (line.url == loaded?.url) {
+                            say("当前已在 \"${line.name}\" 线路")
+                            return@launch
+                        }
+                        val ok = applyConfigInput(line.url, keepLines = true)
+                        if (ok) urlInput = line.url
+                    }
+                }
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().clickableSetting(switchLine),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     RadioButton(
                         selected = line.url == loaded?.url,
-                        onClick = {
-                            scope.launch {
-                                // 已在当前线路只提示 (对照 Flutter _switchLine: _say('当前已在 ...')).
-                                if (line.url == loaded?.url) {
-                                    say("当前已在 \"${line.name}\" 线路")
-                                    return@launch
-                                }
-                                val ok = applyConfigInput(line.url, keepLines = true)
-                                if (ok) urlInput = line.url
-                            }
-                        },
-                        modifier = Modifier.pageFocusGuard(),
+                        onClick = null,
                     )
                     Column(modifier = Modifier.weight(1f)) {
                         Text(line.name, maxLines = 1, style = MaterialTheme.typography.bodyMedium)
@@ -515,8 +517,7 @@ private fun SwitchRow(
         trailingContent = {
             Switch(
                 checked = checked,
-                onCheckedChange = onCheckedChange,
-                modifier = Modifier.pageFocusGuard(),
+                onCheckedChange = null,
             )
         },
         colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
@@ -572,5 +573,24 @@ private fun SettingsActionButton(
 
 /** ListItem 的可点击修饰 (手机模式); TV 下所在页签不可见时退出焦点遍历. */
 @Composable
-private fun Modifier.clickableSetting(onClick: () -> Unit): Modifier =
-    this.pageFocusGuard().then(clickable(onClick = onClick))
+private fun Modifier.clickableSetting(onClick: () -> Unit): Modifier {
+    val tv by TvMode.isTV.collectAsStateWithLifecycle()
+    val guarded = this.pageFocusGuard()
+    if (!tv) return guarded.clickable(onClick = onClick)
+    // TV: 遥控器焦点显示白色描边 (默认 clickable 的焦点指示在深色背景下几乎看不见).
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val focused by source.collectIsFocusedAsState()
+    return guarded
+        .then(
+            if (focused) {
+                Modifier.border(
+                    2.dp,
+                    androidx.compose.ui.graphics.Color.White,
+                    androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+                )
+            } else {
+                Modifier
+            }
+        )
+        .clickable(interactionSource = source, indication = null, onClick = onClick)
+}

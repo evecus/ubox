@@ -305,32 +305,37 @@ private fun HomeTopBar(
             BarChip(label = siteName, icon = Icons.Filled.ArrowDropDown, tv = tv)
         }
         Spacer(Modifier.width(6.dp))
-        TvFocusable(radius = 18.dp, onTap = onSearchClick, modifier = Modifier.weight(1f)) {
-            Box(
-                modifier = Modifier
-                    .height(if (tv) 52.dp else 36.dp)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(18.dp))
-                    .padding(horizontal = 14.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.Search,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = androidx.compose.ui.graphics.Color.Gray,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "搜索影视...",
-                        color = androidx.compose.ui.graphics.Color.Gray,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = (if (tv) 17 else 12).sp),
-                    )
+        if (!tv) {
+            TvFocusable(radius = 18.dp, onTap = onSearchClick, modifier = Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier
+                        .height(if (tv) 52.dp else 36.dp)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest, RoundedCornerShape(18.dp))
+                        .padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = androidx.compose.ui.graphics.Color.Gray,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "搜索影视...",
+                            color = androidx.compose.ui.graphics.Color.Gray,
+                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = (if (tv) 17 else 12).sp),
+                        )
+                    }
                 }
             }
         }
         if (tv) {
-            Spacer(Modifier.width(8.dp))
+            // TV: 搜索入口是独立的"搜索"按钮 (与 收藏/历史 同排), 不再是占满整行的假输入框.
+            Spacer(Modifier.weight(1f))
+            TvButton(label = "搜索", icon = Icons.Filled.Search, height = 52.dp, onTap = onSearchClick)
+            Spacer(Modifier.width(6.dp))
             // 对照 Flutter: 收藏按钮图标是 star_border (描边星), 不是实心星.
             TvButton(label = "收藏", icon = Icons.Outlined.StarBorder, height = 52.dp, onTap = onFavoritesClick)
             Spacer(Modifier.width(6.dp))

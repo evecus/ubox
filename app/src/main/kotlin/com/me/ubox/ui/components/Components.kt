@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -285,6 +286,7 @@ fun TvButton(
     selected: Boolean = false,
     height: Dp = 52.dp,
     fontSize: Int = 16,
+    fillWidth: Boolean = false,
 ) {
     var focusedState by remember { mutableStateOf(false) }
     TvFocusable(
@@ -297,9 +299,12 @@ fun TvButton(
         onFocusChanged = { focusedState = it },
     ) {
         val active = focusedState || selected
+        // 默认宽度包裹内容: 原先 fillMaxSize 会在 Row 里吃掉全部剩余宽度,
+        // 导致同排后面的按钮 (搜索/历史等) 被挤出屏幕. 需要撑满时传 fillWidth = true.
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
+                .fillMaxHeight()
                 .background(
                     color = if (active) Color.White else Color(0x6C3D3D3D),
                     shape = RoundedCornerShape(8.dp),
