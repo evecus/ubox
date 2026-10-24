@@ -1,4 +1,4 @@
-# UBox (Jetpack Compose)
+# UBox
 
 TVBox-flavored movie app, rebuilt as a **pure Kotlin + Jetpack Compose** Android app.
 Android only, phone + TV (leanback) in one APK.
@@ -6,7 +6,6 @@ Android only, phone + TV (leanback) in one APK.
 ## Architecture
 
 - **UI**: Jetpack Compose (Material3), ViewModel + StateFlow, 自绘轻量路由返回栈
-  (对照原 Flutter 版 Navigator 的 push/pop/pushReplacement).
 - **Player**: ExoPlayer (media3) — 点播播放页与直播页共用 `ExoPlayer` +
   自绘 `VideoSurfaceView` (保持视频宽高比) + 控制层/弹幕覆盖.
 - **Danmaku**: 弹幕大师 `DanmakuFlameMaster` (与原版 UBox 同一依赖
@@ -54,16 +53,6 @@ extension-based filtering would kill every source.
 
 主 jar 加载失败不会静默: 具体原因 (下载失败/DexClassLoader 失败/存储目录不可用) 会显示在
 设置页状态栏; jar 失败但存在 js/自带 jar 的源时配置仍可导入.
-
-## Milestones
-
-- **M1** — engine wiring: config apply, js/jar source listing, browse/detail/search pages, direct playback.
-- **M2** — full play chain: `PlayResolver` handles `proxy://` (js own proxy), parse+jx, spider headers;
-  watch progress (resume, per site+vod), history recording, next-episode.
-- **M2.5** — 首页链路: source picker + 首页推荐 grid + 分类入口 → 详情 → 播放;
-  全站搜索 (并行搜索所有源, 精确命中置顶, 源标签).
-- **M3** — library features: favorites, watch history UI, source switching, settings page
-  (config change / TVBox 配置导入 (URL / 剪贴板) / engine cache clear / data wipe), bottom navigation shell.
 
 ## Page chain
 
@@ -153,14 +142,3 @@ TV 界面与遥控操作逻辑对照原版 NovaTV (`com.github.tvbox.osc`) 移�
   - 弹幕地址 (默认 / 自定义).
 - **TV 操作**: 播放页控制条有 弹幕开关 / 弹幕设置 / 弹幕云搜 三个可聚焦按钮;
   遥控 MENU 键短按切换弹幕开关, 长按 2s 打开弹幕设置 (对照原版 `toggleDanmu`).
-
-## 与 Flutter 版的差异
-
-| 项 | Flutter 版 | Compose 版 |
-|---|---|---|
-| UI | Flutter/Dart + media_kit(mpv) | Jetpack Compose + ExoPlayer (media3) |
-| 引擎桥 | `ubox/engine` MethodChannel | `EngineClient` 直连 (协程) |
-| 图片 | Image.network | 自绘 OkHttp + LruCache (`ImageLoader`) |
-| 弹幕 | canvas_danmaku (三方) | 弹幕大师 DanmakuFlameMaster 0.9.25 (与原版 UBox 一致) |
-| 存储 | shared_preferences | SharedPreferences + org.json |
-| 配置解析 | dart:convert | org.json (+ `JsonUtil` 注释剥离/base64) |
