@@ -306,7 +306,9 @@ fun UBoxApp() {
             )
         }
 
-        is Route.SearchResults -> RouteOwned {
+        is Route.SearchResults -> {
+            // 不包 RouteOwned: VM 走 Activity 级 store (key=query), 跳详情/播放页
+            // 再返回时搜索协程与部分结果保留 (RouteOwned 的 pop clear 会切断搜索).
             com.me.ubox.ui.search.SearchResultsScreen(
                 searchSiteKey = route.searchSiteKey,
                 query = route.query,

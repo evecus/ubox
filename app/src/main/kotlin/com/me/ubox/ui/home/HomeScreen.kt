@@ -492,7 +492,7 @@ private fun HomeGrid(
     }
     LazyVerticalGrid(
         state = gridState,
-        columns = GridCells.Adaptive(minSize = if (tv) 200.dp else 130.dp),
+        columns = GridCells.Adaptive(minSize = if (tv) 200.dp else 104.dp),
         contentPadding = PaddingValues(if (tv) 16.dp else 8.dp),
         horizontalArrangement = Arrangement.spacedBy(if (tv) 16.dp else 8.dp),
         verticalArrangement = Arrangement.spacedBy(if (tv) 16.dp else 8.dp),

@@ -52,8 +52,12 @@ import com.me.ubox.ui.components.VodPoster
 /**
  * 搜索结果页 (与搜索页分离的独立页面):
  *   手机 = 单列列表 (封面 + 片名 + 源站 + 备注);
- *   TV/平板 = 多列海报网格 (对照原版 item_search / V7GridLayoutManager 3 列:
+ *   TV/平板 = 多列海报网格 (对照原版 item_search / V7GridLayoutManager 4 列:
  *            封面 + 左上源站角标 + 底部备注 + 片名).
+ *
+ * VM 存活期: 走 Activity 级 store 且以 query 为 key, **不**包 RouteOwned ——
+ * 从结果页跳详情/播放页再返回时 VM 不销毁, 进行中的搜索协程继续, 已完成
+ * 的部分结果保留 (对照页签保活语义; RouteOwned 的 pop 即 clear 会切断搜索).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,9 +66,12 @@ fun SearchResultsScreen(
     query: String,
     onBack: () -> Unit,
     onOpenDetail: (String, String, String) -> Unit,
-    vm: SearchResultsViewModel = viewModel(factory = viewModelFactory {
-        initializer { SearchResultsViewModel(searchSiteKey, query) }
-    }),
+    vm: SearchResultsViewModel = viewModel(
+        key = "search_results_$query",
+        factory = viewModelFactory {
+            initializer { SearchResultsViewModel(searchSiteKey, query) }
+        },
+    ),
 ) {
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
     val sites by vm.sites.collectAsStateWithLifecycle()
@@ -148,9 +155,9 @@ private fun SearchResultsBody(
                         Text(if (running) "正在搜索 ..." else "没有搜索结果")
                     }
                 } else if (tv) {
-                    // TV/平板: 多列海报网格 (对照原版 3 列结果网格).
+                    // TV/平板: 多列海报网格 (对照原版 4 列结果网格).
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
+                        columns = GridCells.Fixed(4),
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(12.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -262,8 +269,8 @@ private fun SearchResultRow(
         ) {
             Box(
                 modifier = Modifier
-                    .width(110.dp)
-                    .height(150.dp)
+                    .width(96.dp)
+                    .height(130.dp)
                     .clip(RoundedCornerShape(6.dp)),
             ) {
                 NetworkImage(
