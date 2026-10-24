@@ -1,0 +1,104 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "org.jetbrains.kotlin.plugin.compose"
+}
+
+android {
+    namespace = "com.novabox"
+    compileSdk = 35
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        applicationId = "com.novabox"
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0"
+        // ABI 列表: 本机默认双架构; CI 通过 NOVA_ABI_FILTERS=arm64-v8a 覆盖为仅 arm64
+        def abiSetting = System.getenv('NOVA_ABI_FILTERS') ?: "armeabi-v7a,arm64-v8a"
+        ndk {
+            abiFilters abiSetting.split(',').collect { it.trim() } as String[]
+        }
+    }
+
+    signingConfigs {
+        release {
+            // 正式签名: 由环境变量注入 (CI 的 secrets → RELEASE_STORE_FILE 等).
+            // 变量缺失或文件不存在时, buildTypes.release 自动回退 debug keystore.
+            def envStore = System.getenv("RELEASE_STORE_FILE")
+            if (envStore != null && file(envStore).exists()) {
+                storeFile file(envStore)
+                storePassword System.getenv("RELEASE_STORE_PASSWORD")
+                keyAlias System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            // 签名优先级: 环境变量正式 keystore > debug keystore (CI 未配 secret 也能出可安装包)
+            // > 不签名 (unsigned). 正式 keystore 通过 CI secrets 注入, 本地构建用 debug keystore.
+            def envStore = System.getenv("RELEASE_STORE_FILE")
+            if (envStore != null && file(envStore).exists()) {
+                signingConfig = signingConfigs.release
+            } else {
+                def debugStore = new File(System.getProperty("user.home"), ".android/debug.keystore")
+                if (debugStore.exists()) {
+                    signingConfig = signingConfigs.debug
+                }
+            }
+        }
+        debug {
+            // debug 不混淆, 保持构建速度
+            minifyEnabled = false
+        }
+    }
+
+    buildFeatures {
+        compose = true
+    }
+}
+
+dependencies {
+    implementation project(":crawler")
+    implementation project(":quickjs")
+
+    implementation "androidx.core:core-ktx:1.13.1"
+    implementation "androidx.activity:activity-compose:1.9.3"
+    implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.8.7"
+    implementation "androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7"
+    implementation "androidx.lifecycle:lifecycle-runtime-compose:2.8.7"
+
+    def composeBom = platform("androidx.compose:compose-bom:2024.09.00")
+    implementation composeBom
+    implementation "androidx.compose.ui:ui"
+    implementation "androidx.compose.ui:ui-graphics"
+    implementation "androidx.compose.material3:material3"
+    implementation "androidx.compose.material:material-icons-extended"
+
+    // ExoPlayer (media3) 播放内核, 替代原 Flutter 版的 media_kit/mpv.
+    // 视频表面用原生 SurfaceView + setVideoSurfaceView (自绘控制层/弹幕层), 不引 media3-ui.
+    implementation "androidx.media3:media3-exoplayer:1.5.1"
+    implementation "androidx.media3:media3-common:1.5.1"
+
+    implementation "androidx.collection:collection:1.4.0"
+
+    // 弹幕大师 (Bilibili DanmakuFlameMaster), 与原版 NovaBox 同一依赖;
+    // 0.9.25 只在 jcenter 发布 (见根 build.gradle 的阿里云 jcenter 镜像).
+    implementation "com.github.ctiao:DanmakuFlameMaster:0.9.25"
+
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
+}
