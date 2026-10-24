@@ -18,7 +18,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArticleOutlined
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Palette

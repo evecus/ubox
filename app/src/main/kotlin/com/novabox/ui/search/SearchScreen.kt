@@ -118,7 +118,6 @@ fun SearchScreen(
         androidx.compose.material3.Scaffold(
             topBar = {
                 TopAppBar(
-                    titleSpacing = 0.dp,
                     title = {
                         Box(
                             modifier = Modifier

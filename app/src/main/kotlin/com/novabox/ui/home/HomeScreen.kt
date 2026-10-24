@@ -102,7 +102,7 @@ fun HomeScreen(
 
     LaunchedEffect(message) {
         if (message != null) {
-            AppSnackbar.show(message)
+            AppSnackbar.show(message ?: "")
             vm.consumeMessage()
         }
     }

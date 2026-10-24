@@ -23,6 +23,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -149,7 +150,7 @@ fun DanmuFullSettingDialog(onDismiss: () -> Unit) {
                 Spacer(Modifier.height(10.dp))
                 Label("弹幕行数")
                 StepperRow(
-                    valueText = "$maxLine行",
+                    valueText = "${maxLine}行",
                     onMinus = if (maxLine > 1) {
                         { applyLine((maxLine - 1).coerceIn(1, 30)) }
                     } else null,

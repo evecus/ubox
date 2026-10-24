@@ -49,7 +49,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusable
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
@@ -624,4 +624,4 @@ fun SimpleTopBar(
 /** StateFlow 收集的兼容别名. */
 @Composable
 fun <T> StateFlow<T>.collectAsState(): androidx.compose.runtime.State<T> =
-    collectAsStateWithLifecycle(this)
+    collectAsStateWithLifecycle()

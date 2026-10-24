@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.novabox.data.Ctx
 import com.novabox.data.History
 import com.novabox.data.PlayResolver
@@ -14,6 +16,8 @@ import com.novabox.data.WatchProgress
 import com.novabox.danmaku.DanmakuManager
 import com.novabox.danmaku.DanmuSettings
 import com.novabox.engine.EngineClient
+import com.novabox.player.PlayerDataSourceFactory
+import com.novabox.player.PlayerHeaders
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,7 +42,10 @@ class PlayerViewModel(
     /** 当前站点 (配置可能在播放期间被清除, 允许为空). */
     private val site: Site? = com.novabox.data.ConfigStore.loaded.value?.sites?.firstOrNull { it.key == siteKey }
 
-    val player: ExoPlayer = ExoPlayer.Builder(Ctx.app).build()
+    @androidx.annotation.OptIn(UnstableApi::class)
+    val player: ExoPlayer = ExoPlayer.Builder(Ctx.app)
+        .setMediaSourceFactory(DefaultMediaSourceFactory(PlayerDataSourceFactory))
+        .build()
 
     private val _idx = MutableStateFlow(startIndex.coerceIn(0, (epUrls.size - 1).coerceAtLeast(0)))
     val idx: StateFlow<Int> = _idx.asStateFlow()
@@ -209,9 +216,9 @@ class PlayerViewModel(
             }
         }
         try {
+            PlayerHeaders.current = info.headers
             val mediaItem = MediaItem.Builder()
                 .setUri(info.url)
-                .setHttpHeaders(info.headers)
                 .build()
             player.setMediaItem(mediaItem)
             player.prepare()

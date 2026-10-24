@@ -6,11 +6,15 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.novabox.data.Ctx
 import com.novabox.data.live.LiveChannelGroup
 import com.novabox.data.live.LiveChannelItem
 import com.novabox.data.live.LiveStore
+import com.novabox.player.PlayerDataSourceFactory
+import com.novabox.player.PlayerHeaders
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,7 +66,10 @@ class LiveViewModel : ViewModel() {
     private var needManualPlay = false
 
     // ---- 播放器 (ExoPlayer) ----
-    val player: ExoPlayer = ExoPlayer.Builder(Ctx.app).build()
+    @androidx.annotation.OptIn(UnstableApi::class)
+    val player: ExoPlayer = ExoPlayer.Builder(Ctx.app)
+        .setMediaSourceFactory(DefaultMediaSourceFactory(PlayerDataSourceFactory))
+        .build()
 
     private val _playing = MutableStateFlow(false)
     val playing: StateFlow<Boolean> = _playing.asStateFlow()
@@ -280,9 +287,9 @@ class LiveViewModel : ViewModel() {
     }
 
     private fun openMedia(item: LiveChannelItem) {
+        PlayerHeaders.current = item.getHeaders()
         val mediaItem = MediaItem.Builder()
             .setUri(item.url)
-            .setHttpHeaders(item.getHeaders())
             .build()
         player.setMediaItem(mediaItem)
         player.prepare()
