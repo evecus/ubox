@@ -527,7 +527,7 @@ private fun VideoSurface(
 
 /**
  * 弹幕覆盖层: 弹幕大师 (DanmakuFlameMaster) 的 DanmakuView.
- * 顶部边距用 offset 整体下移 (对照原版 NovaBox FrameLayout.LayoutParams.topMargin:
+ * 顶部边距用 offset 整体下移 (对照原版 UBox FrameLayout.LayoutParams.topMargin:
  * view 高度保持铺满, 轨道范围由行数设置决定, 两者互相独立).
  */
 @Composable

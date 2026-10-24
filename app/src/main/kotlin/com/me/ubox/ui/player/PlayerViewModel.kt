@@ -208,7 +208,7 @@ class PlayerViewModel(
         restoreDone = false
         danmakuSearched = false
         // 换集: 重置弹幕 (对照 NovaTV 的 resetDanmuState / check("")).
-        // 注意这里不再无脑发起云搜 —— 对齐 NovaBox PlayFragment:
+        // 注意这里不再无脑发起云搜 —— 对齐 UBox PlayFragment:
         //   爬虫 playerContent 自带了 danmaku 就直接用它; 只有没带时才云搜.
         DanmakuManager.clear()
         val site = site
@@ -263,7 +263,7 @@ class PlayerViewModel(
     }
 
     /**
-     * 弹幕入口 (对照 NovaBox PlayFragment 的 searchDanmu / checkDanmu):
+     * 弹幕入口 (对照 UBox PlayFragment 的 searchDanmu / checkDanmu):
      *   - [source] 非空 = 爬虫自带弹幕地址, 直接加载;
      *   - 为空 = 用 片名 + 集名 走内置/自定义接口自动搜索.
      */

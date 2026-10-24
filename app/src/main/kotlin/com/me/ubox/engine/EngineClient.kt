@@ -12,7 +12,7 @@ import java.io.File
 import java.util.concurrent.Executors
 
 /**
- * 引擎客户端: Flutter 版 `novabox/engine` MethodChannel 的 Kotlin 直连替代.
+ * 引擎客户端: Flutter 版 `ubox/engine` MethodChannel 的 Kotlin 直连替代.
  *
  * 语义与原 EngineChannel (Dart) 完全一致, 去掉序列化开销:
  *   - loadSites  登记站点 (异步, 登记完成才返回, 保证随后的 home/search 看得到站点表)

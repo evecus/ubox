@@ -14,7 +14,7 @@ import java.io.RandomAccessFile
 object Ctx {
     lateinit var app: Application
 
-    val prefs by lazy { app.getSharedPreferences("novabox", Application.MODE_PRIVATE) }
+    val prefs by lazy { app.getSharedPreferences("ubox", Application.MODE_PRIVATE) }
 
     val filesDir: File get() = app.filesDir
 }

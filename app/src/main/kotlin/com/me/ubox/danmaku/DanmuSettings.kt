@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * 弹幕设置 (对照原版 NovaBox `util/DanmuHelper.java` + Flutter 版 danmaku_settings.dart).
+ * 弹幕设置 (对照原版 UBox `util/DanmuHelper.java` + Flutter 版 danmaku_settings.dart).
  * 渲染由弹幕大师 (DanmakuFlameMaster) 承担, 各项设置映射到 DanmakuContext:
  *   open          → 开关 (关闭即释放画面)
  *   maxLine       → setMaximumLines (1~30, 默认 3)

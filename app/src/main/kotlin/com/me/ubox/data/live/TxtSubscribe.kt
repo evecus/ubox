@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * 直播源文本解析 (对照原版 com.mobile.novabox.util.live.TxtSubscribe / Flutter 版 txt_subscribe.dart).
+ * 直播源文本解析 (对照原版 com.mobile.ubox.util.live.TxtSubscribe / Flutter 版 txt_subscribe.dart).
  *
  * 输入三种格式, 统一归一化为同一结构:
  * ```json

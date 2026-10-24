@@ -10,7 +10,7 @@ import com.me.ubox.danmaku.DanmuSettings
 import com.whl.quickjs.android.QuickJSLoader
 
 /**
- * NovaBox 纯 Android (Jetpack Compose) 版 Application.
+ * UBox 纯 Android (Jetpack Compose) 版 Application.
  *
  * 与 Flutter 混合版的差异:
  *   - 不再有 Flutter embedding / MethodChannel, 引擎调用走 [com.me.ubox.engine.EngineClient]
@@ -19,7 +19,7 @@ import com.whl.quickjs.android.QuickJSLoader
  *   - TV 检测 / 弹幕设置 / 首页偏好 / 直播源 均在首帧前完成加载
  *     (对照 Flutter 版 main.dart 的 await 初始化序列).
  */
-class NovaboxApplication : Application() {
+class UBoxApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()

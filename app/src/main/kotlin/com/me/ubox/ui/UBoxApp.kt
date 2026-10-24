@@ -63,7 +63,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import com.me.ubox.TvMode
 import com.me.ubox.ui.components.LocalPageVisible
-import com.me.ubox.ui.theme.NovaBoxTheme
+import com.me.ubox.ui.theme.UBoxTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -81,8 +81,8 @@ class MainActivity : ComponentActivity() {
             }
         }
         setContent {
-            NovaBoxTheme {
-                NovaBoxApp()
+            UBoxTheme {
+                UBoxApp()
             }
         }
     }
@@ -99,7 +99,7 @@ class MainActivity : ComponentActivity() {
 /** 应用外壳共享状态 (对照 Flutter 版 RootPage 的静态 notifier). */
 object AppShell {
 
-    /** 当前页签索引 (首页 / 设置). 直播页内可写它跳转设置页 (NovaBoxApp 会同时关闭直播页). */
+    /** 当前页签索引 (首页 / 设置). 直播页内可写它跳转设置页 (UBoxApp 会同时关闭直播页). */
     private val _tabIndex = MutableStateFlow(0)
     val tabIndex: StateFlow<Int> = _tabIndex.asStateFlow()
 
@@ -197,7 +197,7 @@ private fun RouteOwned(content: @Composable () -> Unit) {
 }
 
 @Composable
-fun NovaBoxApp() {
+fun UBoxApp() {
     val backStack = remember { mutableStateListOf<Route>(Route.Main) }
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
     BackHandler(enabled = backStack.size > 1) {
@@ -517,7 +517,7 @@ fun TvRail(
                 modifier = Modifier.size(34.dp),
             )
             Text(
-                text = "NovaBox",
+                text = "UBox",
                 color = Color.Gray,
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),

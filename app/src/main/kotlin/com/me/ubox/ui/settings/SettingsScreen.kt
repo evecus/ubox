@@ -453,7 +453,7 @@ fun SettingsScreen() {
         SectionHeader("关于")
         Spacer(Modifier.height(6.dp))
         Text(
-            text = "NovaBox (Jetpack Compose 版)\n" +
+            text = "UBox (Jetpack Compose 版)\n" +
                 "播放器: ExoPlayer (media3)\n" +
                 "爬虫引擎: QuickJS + OkHttp (Kotlin)\n" +
                 "本地代理端口: 9978",

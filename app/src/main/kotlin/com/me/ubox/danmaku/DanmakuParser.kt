@@ -30,7 +30,7 @@ class DanmakuParseException(message: String) : Exception(message)
 data class DanmuItem(val param: String, val text: String)
 
 /**
- * 弹幕 XML 解析 (对照原版 NovaBox `bean/Danmu.java`):
+ * 弹幕 XML 解析 (对照原版 UBox `bean/Danmu.java`):
  * `<d p="time,type,size,color">text</d>` → [DanmuItem].
  * XmlPullParser 为主, 非法实体/解析失败时回退正则.
  */
@@ -136,10 +136,10 @@ object Danmu {
 }
 
 /**
- * 弹幕大师解析器 (对照原版 NovaBox `player/danmu/Parser.java`):
+ * 弹幕大师解析器 (对照原版 UBox `player/danmu/Parser.java`):
  * 把 [DanmuItem] 列表转成库的 [BaseDanmaku] (含高级弹幕特殊处理).
  *
- * 网络拉取/解压在构造前由 [DanmakuParser] 完成 (IO 线程), 与 NovaBox 的
+ * 网络拉取/解压在构造前由 [DanmakuParser] 完成 (IO 线程), 与 UBox 的
  * "executor 里 resolveContent + Danmu.fromXml, 主线程 prepare" 模式一致.
  */
 class NovaDanmakuParser(private val items: List<DanmuItem>) : BaseDanmakuParser() {

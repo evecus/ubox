@@ -9,16 +9,16 @@ Android only, phone + TV (leanback) in one APK.
   (对照原 Flutter 版 Navigator 的 push/pop/pushReplacement).
 - **Player**: ExoPlayer (media3) — 点播播放页与直播页共用 `ExoPlayer` +
   自绘 `VideoSurfaceView` (保持视频宽高比) + 控制层/弹幕覆盖.
-- **Danmaku**: 弹幕大师 `DanmakuFlameMaster` (与原版 NovaBox 同一依赖
+- **Danmaku**: 弹幕大师 `DanmakuFlameMaster` (与原版 UBox 同一依赖
   `com.github.ctiao:DanmakuFlameMaster:0.9.25`, jcenter 发布, 走阿里云镜像),
   `NovaDanmakuParser` 解析 bilibili XML (含高级弹幕), `DanmakuManager` 负责
   seek 对齐/缓冲冻结/设置热更新 (对照原版 DanmuLoadController).
 - **Crawler engine (Kotlin, unchanged)**:
-  - `quickjs/` — QuickJS JNI wrapper (verbatim from the original NovaBox project, must not be modified).
+  - `quickjs/` — QuickJS JNI wrapper (verbatim from the original UBox project, must not be modified).
   - `crawler/` — spider engine: `com.mobile.js.*` (JS bridge, QuickJS runtime, okhttp, crypto, trans),
     `com.github.catvod.*` (Spider, JsLoader, JarLoader, LocalServer on port 9978, proxy routing).
-  - `app/` — `NovaboxApplication` (QuickJSLoader + LocalServer bootstrap),
-    `com.me.ubox.engine.EngineClient` — 原 Flutter 版 `novabox/engine` MethodChannel 的
+  - `app/` — `UBoxApplication` (QuickJSLoader + LocalServer bootstrap),
+    `com.me.ubox.engine.EngineClient` — 原 Flutter 版 `ubox/engine` MethodChannel 的
     Kotlin 直连替代 (协程封装 SpiderLoader/LocalServer/OkHttp/ConfigCrypto).
 
 ## Engine client contract (`com.me.ubox.engine.EngineClient`)
@@ -44,7 +44,7 @@ Note: the spider URL is fetched as-is — modern configs deliberately disguise t
 `.jpg`/other extensions (the bytes are a real APK with `classes.dex`, md5 matches), so
 extension-based filtering would kill every source.
 
-导入 (设置页) 支持的形式, 均对照原版 NovaBox `ApiConfig`:
+导入 (设置页) 支持的形式, 均对照原版 UBox `ApiConfig`:
 
 - 远程 URL (缺省自动补 `http://`), 或直接粘贴配置 JSON 文本 (`{`/`[` 开头或整体 Base64 长串时不走网络, 其余按原版规则补 `http://` 拉取);
 - `{"urls": [{"name": ..., "url": ...}, ...]}` 多线路集合: 自动切到第一条, 设置页"线路"列表可切换;
@@ -130,7 +130,7 @@ TV 界面与遥控操作逻辑对照原版 NovaTV (`com.github.tvbox.osc`) 移�
 
 ## 弹幕 (手机 / TV 通用, 弹幕大师 DanmakuFlameMaster)
 
-- **渲染**: `master.flame.danmaku.ui.widget.DanmakuView` (与原版 NovaBox 同一依赖),
+- **渲染**: `master.flame.danmaku.ui.widget.DanmakuView` (与原版 UBox 同一依赖),
   Compose 层用 `AndroidView` 承载, 顶部边距用 `Modifier.offset` 整体下移
   (对照原版 `FrameLayout.LayoutParams.topMargin`: view 高度铺满, 行数/边距互相独立).
   防重叠/行数/描边/行距在 `DanmakuManager.applySettings` 里配置.
@@ -159,8 +159,8 @@ TV 界面与遥控操作逻辑对照原版 NovaTV (`com.github.tvbox.osc`) 移�
 | 项 | Flutter 版 | Compose 版 |
 |---|---|---|
 | UI | Flutter/Dart + media_kit(mpv) | Jetpack Compose + ExoPlayer (media3) |
-| 引擎桥 | `novabox/engine` MethodChannel | `EngineClient` 直连 (协程) |
+| 引擎桥 | `ubox/engine` MethodChannel | `EngineClient` 直连 (协程) |
 | 图片 | Image.network | 自绘 OkHttp + LruCache (`ImageLoader`) |
-| 弹幕 | canvas_danmaku (三方) | 弹幕大师 DanmakuFlameMaster 0.9.25 (与原版 NovaBox 一致) |
+| 弹幕 | canvas_danmaku (三方) | 弹幕大师 DanmakuFlameMaster 0.9.25 (与原版 UBox 一致) |
 | 存储 | shared_preferences | SharedPreferences + org.json |
 | 配置解析 | dart:convert | org.json (+ `JsonUtil` 注释剥离/base64) |

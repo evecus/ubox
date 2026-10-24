@@ -16,7 +16,7 @@ import kotlin.math.abs
 enum class DanmakuLoadStatus { IDLE, LOADING, OK, NONE, FAILED }
 
 /**
- * 弹幕调度管理器 (对照原版 NovaBox `player/danmu/DanmuLoadController.java`):
+ * 弹幕调度管理器 (对照原版 UBox `player/danmu/DanmuLoadController.java`):
  *
  * 与自绘版的差异: 弹幕大师自带时间轴 (内部 SystemTimer), 本类不再逐条按时投递,
  * 只需在 seek 时把库的时间轴对齐到播放位置:
@@ -25,7 +25,7 @@ enum class DanmakuLoadStatus { IDLE, LOADING, OK, NONE, FAILED }
  *   - [setPlaying]/[setBuffering] → pause/resume 冻结库动画 (对照 startIfReady /
  *     pauseForBuffering).
  *
- * 加载序号 (loadSeq) 约定 (对齐 NovaBox DanmuLoadController):
+ * 加载序号 (loadSeq) 约定 (对齐 UBox DanmuLoadController):
  *   - 只在"发起一次新加载"的那一刻自增;
  *   - clear 只清数据与画面, **绝不能**动 loadSeq.
  */
@@ -113,7 +113,7 @@ object DanmakuManager {
         ctx.setMaximumLines(maxLines)
     }
 
-    /** 自动搜索并加载弹幕 (对齐 NovaBox PlayFragment.searchDanmu + checkDanmu). */
+    /** 自动搜索并加载弹幕 (对齐 UBox PlayFragment.searchDanmu + checkDanmu). */
     suspend fun loadBySearch(name: String, episode: String) {
         clear()
         if (!DanmuSettings.open) return
@@ -158,7 +158,7 @@ object DanmakuManager {
             _status.value = DanmakuLoadStatus.NONE
             return
         }
-        // 主线程 prepare (与 NovaBox 的 danmuView.post 一致).
+        // 主线程 prepare (与 UBox 的 danmuView.post 一致).
         withContext(Dispatchers.Main) {
             if (seq != loadSeq) return@withContext
             try {
@@ -227,7 +227,7 @@ object DanmakuManager {
         if (playing) v.resume() else v.pause()
     }
 
-    /** 缓冲中: 冻结弹幕动画, 避免缓冲结束瞬间弹幕跳变 (对照 NovaBox pauseForBuffering). */
+    /** 缓冲中: 冻结弹幕动画, 避免缓冲结束瞬间弹幕跳变 (对照 UBox pauseForBuffering). */
     fun setBuffering(buffering: Boolean) {
         val v = view ?: return
         if (!prepared || !DanmuSettings.open) return

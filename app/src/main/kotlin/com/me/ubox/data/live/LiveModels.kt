@@ -3,7 +3,7 @@ package com.me.ubox.data.live
 import org.json.JSONObject
 
 /**
- * 直播频道 (对照原版 com.mobile.novabox.bean.LiveChannelItem / Flutter 版 live_models.dart).
+ * 直播频道 (对照原版 com.mobile.ubox.bean.LiveChannelItem / Flutter 版 live_models.dart).
  *
  * 一个频道可带多条播放地址 (线路): urls 中 "url$线路名" 的 $ 后半段
  * 作为线路名, 缺省为 "源N" (对照原版 loadLives 的 split("\\$", 2)).
@@ -62,7 +62,7 @@ class LiveChannelItem {
 }
 
 /**
- * 直播分组 (对照原版 com.mobile.novabox.bean.LiveChannelGroup / Flutter 版).
+ * 直播分组 (对照原版 com.mobile.ubox.bean.LiveChannelGroup / Flutter 版).
  *
  * 分组名中的 "_" 后半段是分组密码 (对照原版 loadLives:
  * groupName.split("_", 2) → [0]=名称, [1]=密码).

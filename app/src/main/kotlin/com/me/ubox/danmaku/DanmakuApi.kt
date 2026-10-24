@@ -17,7 +17,7 @@ class DanmuSearchResult(
 
 /**
  * 云搜结果包装: 区分"成功(可能为空列表)"与"失败", 便于弹窗给出准确提示
- * (对齐 NovaBox DanmakuApi.SearchListCallback 的 onSuccess/onError).
+ * (对齐 UBox DanmakuApi.SearchListCallback 的 onSuccess/onError).
  */
 class DanmuSearchListResult private constructor(
     val results: List<DanmuSearchResult>,
@@ -34,12 +34,12 @@ class DanmuSearchListResult private constructor(
 }
 
 /**
- * 弹幕搜索 API (移植自 NovaBox DanmakuApi, 对照 Flutter 版 danmaku_api.dart):
+ * 弹幕搜索 API (移植自 UBox DanmakuApi, 对照 Flutter 版 danmaku_api.dart):
  *   - 内置 echo-danmaku 服务: search/episodes → comment JSON → 转 bilibili XML
  *   - 自定义接口: 支持 {name}/{episode} 占位 GET, 或 POST name/episode 表单
  *   - 云搜 (searchList): 返回候选列表供用户手动选择
  *
- * 关键行为与 NovaBox 保持一致:
+ * 关键行为与 UBox 保持一致:
  *   - 内置流程的每一步都带 2 次重试 (退避 1.5s/3s), HTTP 非 2xx 同样重试;
  *   - search/episodes 先带"集数数字"查, 未命中再用不带集数的全量结果查一次;
  *   - search/episodes 返回的是电影但没匹配上时不回落到 search/anime (避免张冠李戴).
@@ -48,7 +48,7 @@ object DanmakuApi {
 
     const val BUILTIN_API = "https://logvardanmu.konfan.cn/87654321"
 
-    /** 与 NovaBox BUILTIN_MAX_RETRY / 1500ms * (retry + 1) 对齐. */
+    /** 与 UBox BUILTIN_MAX_RETRY / 1500ms * (retry + 1) 对齐. */
     private const val MAX_RETRY = 2
     private const val RETRY_BASE_DELAY_MS = 1500L
 
@@ -64,7 +64,7 @@ object DanmakuApi {
         searchSeq++
     }
 
-    /** 是否具备弹幕搜索条件 (对齐 NovaBox DanmakuApi.canSearch). */
+    /** 是否具备弹幕搜索条件 (对齐 UBox DanmakuApi.canSearch). */
     fun canSearch(): Boolean = DanmuSettings.open && getApiUrl().trim().isNotEmpty()
 
     /** 当前生效的弹幕接口地址: 自定义 > 配置里的 danmaku 字段 > 内置. */
@@ -179,7 +179,7 @@ object DanmakuApi {
         return null
     }
 
-    /** 带重试的 comment 拉取 (对齐 NovaBox loadBuiltinComment 的重试路径). */
+    /** 带重试的 comment 拉取 (对齐 UBox loadBuiltinComment 的重试路径). */
     private suspend fun loadBuiltinComment(base: String, episodeId: String, seq: Int): String? {
         return try {
             val body = getWithRetry("$base/api/v2/comment/$episodeId?format=json")
@@ -344,7 +344,7 @@ object DanmakuApi {
                     firstString(bangumi, listOf("animeTitle", "title", "name")),
                 )
             }
-            // 与 NovaBox 一致: animes / anime / data 三个键都遍历一遍.
+            // 与 UBox 一致: animes / anime / data 三个键都遍历一遍.
             for (key in listOf("animes", "anime", "data")) {
                 appendBuiltinAnimeResults(results, base, obj.opt(key))
             }

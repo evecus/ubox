@@ -399,7 +399,7 @@ fun DanmuSearchDialog(
             loading = false
             searched = true
             results = result.results
-            // 失败与"查到了但列表为空"要区分提示 (对齐 NovaBox SearchDanmuDialog).
+            // 失败与"查到了但列表为空"要区分提示 (对齐 UBox SearchDanmuDialog).
             if (result.isError) {
                 AppSnackbar.show(result.error)
             } else if (result.results.isEmpty()) {

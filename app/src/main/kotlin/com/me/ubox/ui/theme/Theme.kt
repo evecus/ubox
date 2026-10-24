@@ -6,11 +6,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
- * NovaBox 暗色主题 (对照 Flutter 版 ThemeData:
+ * UBox 暗色主题 (对照 Flutter 版 ThemeData:
  * ColorScheme.fromSeed(seedColor: Colors.blueGrey, brightness: Brightness.dark)).
  * 应用整体只有暗色 (播放器/海报场景), 不跟随系统亮色.
  */
-private val NovaBoxDarkColors = darkColorScheme(
+private val UBoxDarkColors = darkColorScheme(
     primary = Color(0xFF90A4AE),
     onPrimary = Color(0xFF102027),
     primaryContainer = Color(0xFF37474F),
@@ -48,9 +48,9 @@ object LiveColors {
 }
 
 @Composable
-fun NovaBoxTheme(content: @Composable () -> Unit) {
+fun UBoxTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = NovaBoxDarkColors,
+        colorScheme = UBoxDarkColors,
         content = content,
     )
 }

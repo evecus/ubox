@@ -104,7 +104,7 @@ dependencies {
 
     implementation "androidx.collection:collection:1.4.0"
 
-    // 弹幕大师 (Bilibili DanmakuFlameMaster), 与原版 NovaBox 同一依赖;
+    // 弹幕大师 (Bilibili DanmakuFlameMaster), 与原版 UBox 同一依赖;
     // 0.9.25 只在 jcenter 发布 (见根 build.gradle 的阿里云 jcenter 镜像).
     implementation "com.github.ctiao:DanmakuFlameMaster:0.9.25"
 

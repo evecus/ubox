@@ -37,7 +37,7 @@ class JarLoader {
 
     /// Android 14+ (targetSdk 34+) 的 ENFORCE_READ_ONLY_JAVA_DCL 强制要求
     /// DexClassLoader 加载的文件必须只读, 否则构造时直接抛异常.
-    /// 原版 NovaBox targetSdk 33 不受影响; 本应用 targetSdk 35 必须显式置只读.
+    /// 原版 UBox targetSdk 33 不受影响; 本应用 targetSdk 35 必须显式置只读.
     private fun ensureReadOnly(path: String) {
         try {
             val f = File(path)

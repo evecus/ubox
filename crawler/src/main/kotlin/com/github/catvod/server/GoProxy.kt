@@ -12,7 +12,7 @@ import okhttp3.Request
 import okhttp3.Response
 
 /**
- * /proxy?go=... 分支, 对照原版 com.mobile.novabox.util.Proxy:
+ * /proxy?go=... 分支, 对照原版 com.mobile.ubox.util.Proxy:
  *  - go=live: m3u8 重写代理 (playlist 内所有分片/key/子列表改写回本机 9978,
  *    ts/media/key 透传, ua/referer/origin/cookie/range 透传)
  *  - go=bom: 去掉 m3u8 的 UTF-8 BOM 后原样返回
