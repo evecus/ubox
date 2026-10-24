@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -28,14 +29,12 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LiveTv
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -288,8 +287,6 @@ fun NovaBoxApp() {
     }
 }
 
-private val tabTitles = listOf("首页", "直播", "收藏", "历史", "设置")
-
 private data class TabSpec(
     val outlinedIcon: ImageVector,
     val filledIcon: ImageVector,
@@ -357,11 +354,6 @@ fun MainShell(
     if (!tv) {
         // ---------------- 手机: 底部导航 ----------------
         Scaffold(
-            topBar = {
-        if (!fullscreen) {
-            TopAppBar(title = { Text(tabTitles[tab]) })
-        }
-            },
             bottomBar = {
                 if (!fullscreen) {
                     NavigationBar {
@@ -382,7 +374,11 @@ fun MainShell(
                 }
             },
         ) { padding ->
-            Box(modifier = Modifier.padding(padding)) {
+            Box(
+                modifier = Modifier
+                    .padding(padding)
+                    .then(if (fullscreen) Modifier else Modifier.statusBarsPadding()),
+            ) {
                 KeepAliveStack(index = tab, pages = pages)
             }
         }
@@ -404,19 +400,6 @@ fun MainShell(
             VerticalDivider(thickness = 1.dp)
         }
         Column(modifier = Modifier.fillMaxSize()) {
-            // TV 无 AppBar: 用一行大号标题代替 (10-foot UI).
-            if (!fullscreen) {
-                Box(
-                    modifier = Modifier
-                        .padding(start = 20.dp, top = 12.dp, bottom = 12.dp),
-                ) {
-                    Text(
-                        text = tabTitles[tab],
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                }
-                HorizontalDivider()
-            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()

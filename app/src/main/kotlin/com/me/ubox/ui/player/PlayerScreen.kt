@@ -51,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -130,6 +131,16 @@ fun PlayerScreen(
     // 手机全屏态: 横屏 + 视频铺满 + 控制层 overlay (对照 media_kit
     // AdaptiveVideoControls 的 fullscreen 行为). 状态提升到分支外, 供沉浸式判定.
     var phoneFullscreen by remember { mutableStateOf(false) }
+    // 手机全屏控制层: 4 秒无操作自动隐藏, 点击画面切换显示 (避免半透明黑条常驻遮挡画面).
+    var phoneOverlay by remember { mutableStateOf(true) }
+    var phoneOverlayTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(phoneFullscreen) { if (phoneFullscreen) phoneOverlay = true }
+    LaunchedEffect(phoneFullscreen, phoneOverlay, phoneOverlayTick, playing) {
+        if (phoneFullscreen && phoneOverlay && playing) {
+            kotlinx.coroutines.delay(4000)
+            phoneOverlay = false
+        }
+    }
     val phoneContext = LocalContext.current
     LaunchedEffect(phoneFullscreen) {
         phoneContext.findActivity()?.requestedOrientation =
@@ -181,24 +192,35 @@ fun PlayerScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
                 DanmakuLayer(modifier = Modifier.fillMaxSize())
-                Box(modifier = Modifier.align(Alignment.TopCenter)) {
-                    PhoneFullscreenTopBar(
-                        title = "$vodName · $epName",
-                        onBack = onBack,
-                        onExitFullscreen = { phoneFullscreen = false },
-                    )
-                }
-                Box(modifier = Modifier.align(Alignment.BottomCenter)) {
-                    PhoneControlBar(
-                        playing = playing,
-                        positionMs = positionMs,
-                        durationMs = durationMs,
-                        fullscreen = true,
-                        onPlayPause = vm::playOrPause,
-                        onSeekBy = vm::seekBy,
-                        onSeekTo = vm::seekTo,
-                        onToggleFullscreen = { phoneFullscreen = false },
-                    )
+                // 点击画面: 显示/隐藏控制层 (控制条在其上方, 各自消费点击).
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null,
+                        ) { phoneOverlay = !phoneOverlay },
+                )
+                if (phoneOverlay || loading || error.isNotEmpty()) {
+                    Box(modifier = Modifier.align(Alignment.TopCenter)) {
+                        PhoneFullscreenTopBar(
+                            title = "$vodName · $epName",
+                            onBack = onBack,
+                            onExitFullscreen = { phoneFullscreen = false },
+                        )
+                    }
+                    Box(modifier = Modifier.align(Alignment.BottomCenter)) {
+                        PhoneControlBar(
+                            playing = playing,
+                            positionMs = positionMs,
+                            durationMs = durationMs,
+                            fullscreen = true,
+                            onPlayPause = { phoneOverlayTick++; vm.playOrPause() },
+                            onSeekBy = { phoneOverlayTick++; vm.seekBy(it) },
+                            onSeekTo = { phoneOverlayTick++; vm.seekTo(it) },
+                            onToggleFullscreen = { phoneFullscreen = false },
+                        )
+                    }
                 }
                 if (loading || error.isNotEmpty()) {
                     StatusView(

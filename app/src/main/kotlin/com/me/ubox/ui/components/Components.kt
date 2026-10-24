@@ -121,6 +121,23 @@ fun ImmersiveSystemBarsEffect(immersive: Boolean) {
     DisposableEffect(immersive) {
         val window = (view.context.findActivity())?.window
         if (immersive && window != null) {
+            // 真全屏: 内容延伸到系统栏/刘海(挖孔)区域下方, 否则刘海侧会留黑边.
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                val lp = window.attributes
+                lp.layoutInDisplayCutoutMode =
+                    if (android.os.Build.VERSION.SDK_INT >= 30)
+                        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                    else
+                        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                window.attributes = lp
+            }
+            // 去掉系统栏半透明遮罩 (状态栏/导航栏"阴影").
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                window.isNavigationBarContrastEnforced = false
+            }
             val controller = WindowCompat.getInsetsController(window, view)
             controller.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -130,6 +147,12 @@ fun ImmersiveSystemBarsEffect(immersive: Boolean) {
             if (window != null) {
                 WindowCompat.getInsetsController(window, view)
                     .show(WindowInsetsCompat.Type.systemBars())
+                if (immersive && android.os.Build.VERSION.SDK_INT >= 28) {
+                    val lp = window.attributes
+                    lp.layoutInDisplayCutoutMode =
+                        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                    window.attributes = lp
+                }
             }
         }
     }
