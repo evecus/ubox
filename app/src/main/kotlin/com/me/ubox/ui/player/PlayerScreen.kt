@@ -274,11 +274,12 @@ fun PlayerScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .aspectRatio(16f / 9f),
+                            .aspectRatio(16f / 9f)
+                            .background(Color.Black),
                     ) {
                         VideoSurface(
                             vm = vm,
-                            videoAspectRatio = null,
+                            videoAspectRatio = if (videoAspectRatio > 0f) videoAspectRatio else null,
                             modifier = Modifier.fillMaxSize(),
                         )
                         DanmakuLayer(modifier = Modifier.fillMaxSize())

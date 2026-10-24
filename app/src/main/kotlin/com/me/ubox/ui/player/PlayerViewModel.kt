@@ -127,7 +127,8 @@ class PlayerViewModel(
 
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
-                    _videoAspectRatio.value = videoSize.width.toFloat() / videoSize.height
+                    _videoAspectRatio.value =
+                        videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio / videoSize.height
                 }
             }
         })

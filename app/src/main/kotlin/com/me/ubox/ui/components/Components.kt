@@ -212,7 +212,21 @@ fun TvFocusable(
     LaunchedEffect(autofocus) {
         // 只在可见时请求: 隐藏页的 autofocus 不能抢走可见页焦点 (enabled=false 时
         // requestFocus 本身无效, 这里显式跳过, 且 visibility 变化不重触发).
-        if (autofocus && focusEnabled) focusRequester.requestFocus()
+        if (autofocus && focusEnabled) {
+            // 懒列表 (LazyColumn) 里的条目: 效果可能先于节点挂载执行, 此时 requestFocus 会抛
+            // IllegalStateException("FocusRequester is not initialized") 直接闪退.
+            // 等几帧重试, 失败也只放弃, 不能崩.
+            repeat(8) {
+                androidx.compose.runtime.withFrameNanos { }
+                val ok = try {
+                    focusRequester.requestFocus()
+                    true
+                } catch (_: IllegalStateException) {
+                    false
+                }
+                if (ok) return@LaunchedEffect
+            }
+        }
     }
     LaunchedEffect(focused) { onFocusChanged(focused) }
     val scale by animateFloatAsState(
@@ -641,14 +655,19 @@ fun VideoSurfaceView(
             onSurfaceDispose()
         }
     }
-    AndroidView(
-        factory = { surfaceView },
-        modifier = if (aspectRatio != null && aspectRatio > 0f) {
-            modifier.fillMaxWidth().aspectRatio(aspectRatio)
-        } else {
-            modifier
-        },
-    )
+    // 按视频真实比例"适应"容器 (contain): 容器比视频宽 → 左右留黑边, 比视频窄 → 上下留黑边.
+    // 原先 fillMaxWidth().aspectRatio() 只按宽度算高度, 容器较矮时 (手机横屏全屏) 会超出屏幕被裁掉.
+    // SurfaceView 里视频会被拉伸铺满 Surface, 所以必须由 View 本身的尺寸保持比例.
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        AndroidView(
+            factory = { surfaceView },
+            modifier = if (aspectRatio != null && aspectRatio > 0f) {
+                Modifier.aspectRatio(aspectRatio)
+            } else {
+                Modifier.fillMaxSize()
+            },
+        )
+    }
 }
 
 /** 进度条 + 时间文本 (播放页控制条). */

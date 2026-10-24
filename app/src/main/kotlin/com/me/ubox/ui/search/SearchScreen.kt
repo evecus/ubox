@@ -112,7 +112,8 @@ fun SearchScreen(
             AppSnackbar.show("请输入搜索词")
             return
         }
-        focusManager.clearFocus(force = true)
+        // 仅手机需要收起软键盘; TV 没有软键盘, 强制清焦点会让遥控器失去焦点落点.
+        if (!tv) focusManager.clearFocus(force = true)
         vm.search(trimmed)
     }
 
@@ -211,7 +212,9 @@ fun SearchScreen(
     // ---------------- TV: 三栏 (键盘 / 热词 / 结果) ----------------
     // TV: 无软键盘, 输入框自动获焦, 遥控器下键即可移到键盘按键.
     LaunchedEffect(tv) {
-        if (tv) inputFocusRequester.requestFocus()
+        if (tv) {
+            try { inputFocusRequester.requestFocus() } catch (_: IllegalStateException) {}
+        }
     }
     androidx.compose.material3.Scaffold(
         topBar = {
