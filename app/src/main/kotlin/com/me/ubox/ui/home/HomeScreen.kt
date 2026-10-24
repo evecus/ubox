@@ -58,7 +58,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.me.ubox.TvMode
-import com.me.ubox.data.ConfigLine
 import com.me.ubox.data.History
 import com.me.ubox.data.HomePrefs
 import com.me.ubox.data.Site
@@ -75,7 +74,7 @@ import android.view.KeyEvent as AndroidKeyEvent
 
 /**
  * 首页 (对照 Flutter 版 home_page.dart):
- * 顶部 线路/站源/搜索/收藏/历史 + 横向分类 Tab + 每 Tab 海报网格.
+ * 顶部 站源/搜索/收藏/历史 + 横向分类 Tab + 每 Tab 海报网格.
  */
 @Composable
 fun HomeScreen(
@@ -98,15 +97,12 @@ fun HomeScreen(
     val selectedTab by vm.selectedTab.collectAsStateWithLifecycle()
     val bootLoading by vm.bootLoading.collectAsStateWithLifecycle()
     val bootError by vm.bootError.collectAsStateWithLifecycle()
-    val lineBusy by vm.lineBusy.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
 
     val hasConfig = config != null && config!!.sites.any { it.isRealSource }
     val sites = config?.sites?.filter { it.isRealSource } ?: emptyList()
-    val lines = config?.lines ?: emptyList()
 
     var showSitePicker by remember { mutableStateOf(false) }
-    var showLinePicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) {
         if (message != null) {
@@ -170,10 +166,7 @@ fun HomeScreen(
         HomeTopBar(
             tv = tv,
             remote = remote,
-            lineLabel = lineLabelOf(lines, config),
             siteName = site?.displayName ?: "站源",
-            lineBusy = lineBusy,
-            onLineClick = { if (lines.size >= 2) showLinePicker = true },
             onSiteClick = { showSitePicker = true },
             onSearchClick = { onOpenSearch("") },
             onFavoritesClick = onOpenFavorites,
@@ -263,40 +256,14 @@ fun HomeScreen(
             onDismiss = { showSitePicker = false },
         )
     }
-    if (showLinePicker) {
-        SinglePickSheet(
-            title = "切换线路",
-            items = lines,
-            labelOf = { it.name },
-            subtitleOf = { it.url },
-            current = null,
-            isSelected = { it.url == config?.url },
-            onPick = {
-                showLinePicker = false
-                vm.switchLine(it)
-            },
-            onDismiss = { showLinePicker = false },
-        )
-    }
 }
 
-private fun lineLabelOf(lines: List<ConfigLine>, config: com.me.ubox.data.Config?): String {
-    if (config == null) return "线路"
-    for (l in lines) {
-        if (l.url == config.url) return l.name
-    }
-    return "线路"
-}
-
-/** 顶部: 线路 / 站源 / 搜索 / 收藏 / 历史 / 直播 (TV 下为可聚焦 chip; 真 TV 追加设置入口). */
+/** 顶部: 站源 / 搜索 / 收藏 / 历史 / 直播 (TV 下为可聚焦 chip; 真 TV 追加设置入口). */
 @Composable
 private fun HomeTopBar(
     tv: Boolean,
     remote: Boolean,
-    lineLabel: String,
     siteName: String,
-    lineBusy: Boolean,
-    onLineClick: () -> Unit,
     onSiteClick: () -> Unit,
     onSearchClick: () -> Unit,
     onFavoritesClick: () -> Unit,
@@ -310,10 +277,6 @@ private fun HomeTopBar(
             .padding(start = if (tv) 20.dp else 12.dp, top = if (tv) 12.dp else 8.dp, end = if (tv) 16.dp else 8.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TvFocusable(radius = 8.dp, onTap = onLineClick) {
-            BarChip(label = lineLabel, icon = Icons.Filled.ArrowDropDown, busy = lineBusy, tv = tv)
-        }
-        Spacer(Modifier.width(6.dp))
         TvFocusable(radius = 8.dp, onTap = onSiteClick) {
             BarChip(label = siteName, icon = Icons.Filled.ArrowDropDown, tv = tv)
         }
@@ -370,7 +333,7 @@ private fun HomeTopBar(
 }
 
 @Composable
-private fun BarChip(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tv: Boolean, busy: Boolean = false) {
+private fun BarChip(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tv: Boolean) {
     Box(
         modifier = Modifier
             .height(if (tv) 44.dp else 36.dp)
@@ -379,19 +342,15 @@ private fun BarChip(label: String, icon: androidx.compose.ui.graphics.vector.Ima
         contentAlignment = Alignment.Center,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (busy) {
-                CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
-            } else {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = (if (tv) 17 else 13).sp,
-                        fontWeight = FontWeight.W600,
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontSize = (if (tv) 17 else 13).sp,
+                    fontWeight = FontWeight.W600,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Icon(
                 imageVector = icon,
                 contentDescription = null,

@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.me.ubox.data.Config
 import com.me.ubox.data.ConfigException
-import com.me.ubox.data.ConfigLine
 import com.me.ubox.data.ConfigStore
 import com.me.ubox.data.DoubanHot
 import com.me.ubox.data.History
@@ -66,9 +65,6 @@ class HomeViewModel : ViewModel() {
 
     private val _bootError = MutableStateFlow("")
     val bootError: StateFlow<String> = _bootError.asStateFlow()
-
-    private val _lineBusy = MutableStateFlow(false)
-    val lineBusy: StateFlow<Boolean> = _lineBusy.asStateFlow()
 
     /** 面向用户的一次性消息 (SnackBar). */
     private val _message = MutableStateFlow<String?>(null)
@@ -331,19 +327,6 @@ class HomeViewModel : ViewModel() {
         HomePrefs.setHomeApi(site.key)
         _site.value = site
         viewModelScope.launch { loadHomeContent() }
-    }
-
-    /** 线路切换 (对照原版"配置地址"列表, 复用设置页的应用链路). */
-    fun switchLine(line: ConfigLine) {
-        val loaded = ConfigStore.loaded.value ?: return
-        if (_lineBusy.value) return
-        if (line.url == loaded.url) return
-        _lineBusy.value = true
-        viewModelScope.launch {
-            val (ok, msg) = ConfigStore.applyInput(line.url, keepLines = loaded.lines)
-            _lineBusy.value = false
-            _message.value = if (ok) "已切换到线路: ${line.name}" else msg
-        }
     }
 
     private fun updateTab(id: String, update: (HomeTabState) -> HomeTabState) {
