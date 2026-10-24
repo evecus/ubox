@@ -141,7 +141,7 @@ private fun SearchResultsBody(
         }
         Row(modifier = Modifier.fillMaxSize()) {
             // 左侧: "全部" + 有结果的源
-            Box(modifier = Modifier.width(118.dp)) {
+            Box(modifier = Modifier.width(140.dp)) {
                 SiteFilterList(
                     sites = vm.sitesWithResults(),
                     filter = filter,
@@ -155,13 +155,13 @@ private fun SearchResultsBody(
                         Text(if (running) "正在搜索 ..." else "没有搜索结果")
                     }
                 } else if (tv) {
-                    // TV/平板: 多列海报网格 (对照原版 4 列结果网格).
+                    // TV/平板: 多列海报网格 (对照原版 5 列结果网格).
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(4),
+                        columns = GridCells.Fixed(5),
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
                         itemsIndexed(flat) { index, hit ->
                             VodPoster(
@@ -236,7 +236,7 @@ private fun SiteFilterTile(
                 shape = RoundedCornerShape(12.dp),
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 14.dp),
+            .padding(horizontal = 8.dp, vertical = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -244,7 +244,7 @@ private fun SiteFilterTile(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp),
         )
     }
 }
