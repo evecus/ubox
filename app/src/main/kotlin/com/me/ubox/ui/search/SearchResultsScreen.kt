@@ -50,10 +50,16 @@ import com.me.ubox.ui.components.TvFocusable
 import com.me.ubox.ui.components.VodPoster
 
 /**
+ * TV/平板结果卡片固定宽度 (dp): 与 5 列网格时同尺寸, 改回 4 列后不再随列宽变大,
+ * 多出的列宽归入间距 (1080p TV 上卡片净间距约 49dp, 平板上约 22dp).
+ */
+private val tvPosterWidth = 150.dp
+
+/**
  * 搜索结果页 (与搜索页分离的独立页面):
  *   手机 = 单列列表 (封面 + 片名 + 源站 + 备注);
- *   TV/平板 = 多列海报网格 (对照原版 item_search / V7GridLayoutManager 4 列:
- *            封面 + 左上源站角标 + 底部备注 + 片名).
+ *   TV/平板 = 4 列海报网格 (对照原版 item_search / V7GridLayoutManager:
+ *            封面 + 左上源站角标 + 底部备注 + 片名), 卡片宽度固定 (见 [tvPosterWidth]).
  *
  * VM 存活期: 走 Activity 级 store 且以 query 为 key, **不**包 RouteOwned ——
  * 从结果页跳详情/播放页再返回时 VM 不销毁, 进行中的搜索协程继续, 已完成
@@ -141,7 +147,7 @@ private fun SearchResultsBody(
         }
         Row(modifier = Modifier.fillMaxSize()) {
             // 左侧: "全部" + 有结果的源
-            Box(modifier = Modifier.width(140.dp)) {
+            Box(modifier = Modifier.width(160.dp)) {
                 SiteFilterList(
                     sites = vm.sitesWithResults(),
                     filter = filter,
@@ -155,22 +161,33 @@ private fun SearchResultsBody(
                         Text(if (running) "正在搜索 ..." else "没有搜索结果")
                     }
                 } else if (tv) {
-                    // TV/平板: 多列海报网格 (对照原版 5 列结果网格).
+                    // TV/平板: 4 列结果网格; 卡片固定宽度不随列宽拉伸
+                    // (VodPoster 是 fillMaxWidth + aspectRatio, 不固定就会随列数变大),
+                    // 列宽多出的空间归入卡片间距.
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(5),
+                        columns = GridCells.Fixed(4),
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
                     ) {
                         itemsIndexed(flat) { index, hit ->
-                            VodPoster(
-                                item = hit.item,
-                                onClick = { onOpenDetail(hit.site.key, hit.item.id, hit.item.name) },
-                                badgeText = hit.site.name,
-                                tvSizes = true,
-                                autofocus = focusFirstResult && index == 0,
-                            )
+                            Box(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(modifier = Modifier.width(tvPosterWidth)) {
+                                    VodPoster(
+                                        item = hit.item,
+                                        onClick = {
+                                            onOpenDetail(hit.site.key, hit.item.id, hit.item.name)
+                                        },
+                                        badgeText = hit.site.name,
+                                        tvSizes = true,
+                                        autofocus = focusFirstResult && index == 0,
+                                    )
+                                }
+                            }
                         }
                     }
                 } else {
@@ -244,7 +261,7 @@ private fun SiteFilterTile(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 16.sp),
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 17.sp),
         )
     }
 }
