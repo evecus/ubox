@@ -2,6 +2,8 @@ package com.me.ubox.ui.settings
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -77,9 +79,11 @@ import com.me.ubox.ui.dialogs.DanmuFullSettingDialog
 import com.me.ubox.ui.dialogs.InfoDialog
 import com.me.ubox.ui.dialogs.SinglePickSheet
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.system.exitProcess
 
 /**
  * 设置页 (对照 Flutter 版 settings_page.dart):
@@ -137,12 +141,19 @@ fun SettingsScreen() {
         busy = true
         statusIsError = false
         say("应用配置中...")
+        val oldUrl = ConfigStore.loadUrl()
         val (ok, msg) = ConfigStore.applyInput(
             input,
             keepLines = if (keepLines) ConfigStore.loadLines() else emptyList(),
         )
         busy = false
         say(msg, error = !ok)
+        // 配置 URL 实际变化才重启 (对照原版 !oldApi.equals(url) 判断, 相同配置
+        // 重复应用不重启): 只刷 StateFlow 的话, 返回栈里的详情/播放页与各 VM
+        // 缓存仍持旧站源数据 (原版 ModelSettingFragment 对此整体重启应用).
+        if (ok && oldUrl != ConfigStore.loadUrl()) {
+            restartAppAfterConfigChanged(context, scope)
+        }
         return ok
     }
 
@@ -671,4 +682,35 @@ private fun Modifier.clickableSetting(onClick: () -> Unit): Modifier {
             if (focused) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color.Transparent,
             androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
         )
+}
+
+/** 重启已排程 (防止 2.5s 窗口内连点多个线路导致重复启动). */
+private var restartScheduled = false
+
+/**
+ * 配置/线路切换后重启应用 (对照原版 ModelSettingFragment.restartAppAfterConfigChanged):
+ * Toast 提示 + 2.5s 延迟后启动 Launch Intent (FLAG_ACTIVITY_CLEAR_TOP) 并杀进程.
+ *
+ * 为什么必须重启而不是只刷 StateFlow: ConfigStore.loaded 变化只驱动了监听它的 UI,
+ * 但自绘返回栈里的二级页 (详情/播放/浏览) 与各 VM 缓存 (首页 tabStates、
+ * 保活的 SearchResultsViewModel) 仍持旧站源数据, 引擎 spider 实例同理;
+ * 整个进程重建才能保证切换彻底 (对照原版 System.exit(0) 的效果).
+ */
+private fun restartAppAfterConfigChanged(
+    context: android.content.Context,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    if (restartScheduled) return
+    restartScheduled = true
+    Toast.makeText(context, "配置已切换, 即将自动重启应用", Toast.LENGTH_SHORT).show()
+    scope.launch {
+        delay(2500)
+        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        if (intent != null) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            context.startActivity(intent)
+        }
+        android.os.Process.killProcess(android.os.Process.myPid())
+        exitProcess(0)
+    }
 }
