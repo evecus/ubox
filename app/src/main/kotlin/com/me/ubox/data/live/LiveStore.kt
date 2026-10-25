@@ -1,5 +1,6 @@
 package com.me.ubox.data.live
 
+import com.me.ubox.data.ConfigCache
 import com.me.ubox.data.Ctx
 import com.me.ubox.engine.EngineClient
 import com.me.ubox.data.Http
@@ -37,6 +38,14 @@ object LiveStore {
     private val _liveUrlChanged = MutableStateFlow("")
     val liveUrlChanged: StateFlow<String> = _liveUrlChanged.asStateFlow()
 
+    /** 设置页"更新缓存"拉到新直播内容后, 通知直播页重载. */
+    private val _reloadTick = MutableStateFlow(0)
+    val reloadTick: StateFlow<Int> = _reloadTick.asStateFlow()
+
+    fun notifyReload() {
+        _reloadTick.value++
+    }
+
     private var initialized = false
 
     fun init() {
@@ -73,9 +82,22 @@ object LiveStore {
     }
 
     /** 拉取并解析直播源. 返回 (是否成功, 面向用户的消息, 分组列表). */
-    suspend fun fetchAndParse(url: String): Triple<Boolean, String, List<LiveChannelGroup>> {
+    suspend fun fetchAndParse(
+        url: String,
+        useCache: Boolean = false,
+    ): Triple<Boolean, String, List<LiveChannelGroup>> {
         val target = normalizeUrl(url)
         if (target.isEmpty()) return Triple(false, "直播源地址为空", emptyList())
+        // 本地缓存开关开启且命中: 不联网 (设置页"更新缓存"传 useCache=false 强制重拉).
+        if (useCache) {
+            ConfigCache.read(ConfigCache.KIND_LIVE, target)?.let { entry ->
+                val cached = loadLives(TxtSubscribe.parseToJsonArray(entry.text))
+                if (cached.isNotEmpty()) {
+                    val n = cached.sumOf { it.channels.size }
+                    return Triple(true, "已载入 $n 个频道 (本地缓存)", cached)
+                }
+            }
+        }
         var body = Http.getText(target)
         if (body.isNullOrEmpty()) {
             body = EngineClient.getText(target).ifEmpty { null }
@@ -87,6 +109,7 @@ object LiveStore {
         if (groups.isEmpty()) {
             return Triple(false, "直播源解析失败: $target\n(内容不是有效的直播列表)", emptyList())
         }
+        ConfigCache.write(ConfigCache.KIND_LIVE, target, body)
         val channelCount = groups.sumOf { it.channels.size }
         return Triple(true, "已载入 $channelCount 个频道", groups)
     }

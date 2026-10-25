@@ -45,6 +45,51 @@ class Config(var url: String) {
     /** 配置里的 "danmaku" 字段 (原版 ApiConfig.getDanmaku()), fetch 时填充. */
     var danmakuApi: String = ""
 
+    /** 解析出站点的那份配置文本 (解密/解码后), 供本地缓存保存. */
+    var rawText: String = ""
+
+    /** 本次配置来自本地缓存 (未联网拉取); 此时 spider 主 jar 本地已有则直接复用. */
+    var fromCache: Boolean = false
+
+    // ---------------------------------------------------------------- 本地缓存
+
+    /** 从本地缓存还原 (地址 = [url]); 命中返回 true, 此时不联网. */
+    fun loadFromCache(): Boolean {
+        val entry = ConfigCache.read(ConfigCache.KIND_TVBOX, url.trim()) ?: return false
+        val map = decodeMap(entry.text) ?: return false
+        val sitesRaw = map.optJSONArray("sites") ?: return false
+        if (sitesRaw.length() == 0) return false
+        val meta = entry.meta
+        base = meta.optString("base")
+        spiderRaw = JsonUtil.optStringOrNull(map, "spider") ?: ""
+        danmakuApi = (JsonUtil.optStringOrNull(map, "danmaku") ?: "").trim()
+        val cachedLines = mutableListOf<ConfigLine>()
+        val arr = meta.optJSONArray("lines")
+        if (arr != null) {
+            for (i in 0 until arr.length()) ConfigLine.from(arr.opt(i))?.let { cachedLines.add(it) }
+        }
+        lines = cachedLines
+        lineSource = meta.optString("lineSource")
+        parseSites(sitesRaw)
+        if (sites.isEmpty()) return false
+        meta.optString("url").takeIf { it.isNotEmpty() }?.let { url = it }
+        rawText = entry.text
+        fromCache = true
+        return true
+    }
+
+    /** 写入本地缓存 (开关开启时才生效). */
+    fun saveToCache() {
+        if (rawText.isEmpty()) return
+        val meta = JSONObject().apply {
+            put("url", url)
+            put("base", base)
+            put("lineSource", lineSource)
+            put("lines", JSONArray().also { a -> lines.forEach { a.put(it.toJson()) } })
+        }
+        ConfigCache.write(ConfigCache.KIND_TVBOX, url.trim(), rawText, meta)
+    }
+
     // ---------------------------------------------------------------- 拉取解析
 
     /** 拉取并解析配置. 失败抛 [ConfigException], 原因可读. */
@@ -96,6 +141,8 @@ class Config(var url: String) {
                 spiderRaw = JsonUtil.optStringOrNull(map, "spider") ?: ""
                 danmakuApi = (JsonUtil.optStringOrNull(map, "danmaku") ?: "").trim()
                 parseSites(sitesRaw)
+                rawText = text
+                fromCache = false
                 url = current
                 return
             }
@@ -384,6 +431,12 @@ class Config(var url: String) {
             val file = File(support, "main_${JsonUtil.shortHash(url)}.jar")
             var ok = false
             var dlErr: String? = null
+            // 本地缓存模式: 主 jar 已下载且校验通过就直接复用, 不再联网下载.
+            if (fromCache && file.exists() && file.length() > 0L && isValidJarFile(file) &&
+                (expectMd5 == null || JsonUtil.md5Hex(file.readBytes()) == expectMd5)
+            ) {
+                ok = true
+            }
             for (attempt in 0 until 2) {
                 if (ok) break
                 // 无论哪一轮, 写文件前先删旧文件: 上次成功加载后 jar 被引擎侧
@@ -484,7 +537,11 @@ object ConfigStore {
      * 设置页"更换配置/导入"与首页"线路"切换共用同一链路, 避免两处逻辑漂移.
      * 返回 (是否成功, 面向用户的消息); 成功后 loaded 已更新.
      */
-    suspend fun applyInput(input: String, keepLines: List<ConfigLine> = emptyList()): Pair<Boolean, String> {
+    suspend fun applyInput(
+        input: String,
+        keepLines: List<ConfigLine> = emptyList(),
+        useCache: Boolean = false,
+    ): Pair<Boolean, String> {
         val text = input.trim()
         if (text.isEmpty()) {
             saveUrl("")
@@ -495,7 +552,9 @@ object ConfigStore {
         }
         val config = Config(text)
         return try {
-            config.fetch()
+            // 启动自动加载走本地缓存 (开关开启且命中时不联网); 其余情况在线拉取.
+            val hitCache = useCache && ConfigCache.enabled.value && config.loadFromCache()
+            if (!hitCache) config.fetch()
             if (config.sites.isEmpty()) return Pair(false, "配置中没有可用源")
             if (keepLines.isNotEmpty() && config.lines.isEmpty()) {
                 config.lines = keepLines
@@ -510,12 +569,14 @@ object ConfigStore {
             }
             saveUrl(config.url)
             saveLines(config.lines, config.lineSource)
+            if (!hitCache) config.saveToCache()
             _danmakuApi.value = config.danmakuApi
             markLoaded(config)
             val count = config.sites.count { it.isRealSource }
             val lineTip = if (config.lines.isNotEmpty()) ", ${config.lines.size} 条线路" else ""
             val jarTip = if (config.jarError.isNotEmpty()) "\n${config.jarError} (已跳过)" else ""
-            Pair(true, "成功, 已应用 $count 个源$lineTip$jarTip")
+            val cacheTip = if (hitCache) " (本地缓存)" else ""
+            Pair(true, "成功, 已应用 $count 个源$lineTip$cacheTip$jarTip")
         } catch (e: ConfigException) {
             Pair(false, e.message ?: "载入失败")
         } catch (e: Exception) {

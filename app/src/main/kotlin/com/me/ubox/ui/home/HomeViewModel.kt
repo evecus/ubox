@@ -146,7 +146,7 @@ class HomeViewModel : ViewModel() {
         }
         _bootLoading.value = true
         _bootError.value = ""
-        val (ok, msg) = ConfigStore.applyInput(url)
+        val (ok, msg) = ConfigStore.applyInput(url, useCache = true)
         _bootLoading.value = false
         if (!ok) _bootError.value = msg
     }

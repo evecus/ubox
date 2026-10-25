@@ -109,6 +109,10 @@ fun LiveScreen(
     LaunchedEffect(Unit) {
         com.me.ubox.data.live.LiveStore.liveUrlChanged.drop(1).collect { vm.onLiveUrlChanged() }
     }
+    // 设置页"更新缓存"拉到新直播内容 → 重载 (此时读到的是刚更新的缓存).
+    LaunchedEffect(Unit) {
+        com.me.ubox.data.live.LiveStore.reloadTick.drop(1).collect { vm.onLiveUrlChanged() }
+    }
 
     // 直播页已是独立路由: 退出页面 = 组合销毁 + per-route VM 清空 (onCleared 释放播放器),
     // 不再需要按页签切换停播.

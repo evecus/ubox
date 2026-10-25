@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.me.ubox.TvMode
 import com.me.ubox.data.ConfigStore
 import com.me.ubox.data.History
+import com.me.ubox.data.ConfigCache
 import com.me.ubox.data.HomePrefs
 import com.me.ubox.data.SiteFilter
 import com.me.ubox.ui.dialogs.SiteBlacklistSheet
@@ -118,6 +119,8 @@ fun SettingsScreen() {
     var showImport by remember { mutableStateOf(false) }
     var showHomeRecPicker by remember { mutableStateOf(false) }
     var showSiteFilter by remember { mutableStateOf(false) }
+    val cacheOn by ConfigCache.enabled.collectAsStateWithLifecycle()
+    val cacheRevision by ConfigCache.revision.collectAsStateWithLifecycle()
     val siteBlacklist by SiteFilter.keywords.collectAsStateWithLifecycle()
     var showTvModePicker by remember { mutableStateOf(false) }
     var showDecoderPicker by remember { mutableStateOf(false) }
@@ -168,6 +171,44 @@ fun SettingsScreen() {
             val proxy = EngineClient.proxyUrl(true)
             if (ip.isEmpty()) "引擎未就绪" else "$ip\n$proxy"
         }
+    }
+
+    /**
+     * 更新本地缓存: 配置与直播源各强制联网拉取一次并覆盖缓存.
+     * 配置内容有变化时重启应用 (与换配置一致, 保证各页/引擎拿到新站源).
+     */
+    suspend fun updateCache() {
+        busy = true
+        statusIsError = false
+        say("更新缓存中...")
+        val parts = mutableListOf<String>()
+        var allOk = true
+        var configChanged = false
+        val cfgUrl = ConfigStore.loadUrl()
+        if (cfgUrl.isNotEmpty()) {
+            val old = ConfigCache.peek(ConfigCache.KIND_TVBOX, cfgUrl)?.text
+            val (ok, msg) = ConfigStore.applyInput(cfgUrl, ConfigStore.loadLines())
+            allOk = allOk && ok
+            parts.add("配置: ${msg.lineSequence().first()}")
+            if (ok && old != null) {
+                val now = ConfigCache.peek(ConfigCache.KIND_TVBOX, ConfigStore.loadUrl())?.text
+                configChanged = now != null && now != old
+            }
+        }
+        val liveUrl = LiveStore.liveUrl.value
+        if (liveUrl.isNotEmpty()) {
+            val (ok, msg, _) = LiveStore.fetchAndParse(liveUrl, useCache = false)
+            allOk = allOk && ok
+            parts.add("直播: ${msg.lineSequence().first()}")
+            if (ok) LiveStore.notifyReload()
+        }
+        busy = false
+        if (parts.isEmpty()) {
+            say("没有可更新的内容, 请先导入配置或保存直播源", error = true)
+            return
+        }
+        say(parts.joinToString("\n"), error = !allOk)
+        if (configChanged) restartAppAfterConfigChanged(context, scope)
     }
 
     LaunchedEffect(Unit) { refreshEngine() }
@@ -342,6 +383,42 @@ fun SettingsScreen() {
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+        // ---------------- 缓存 ----------------
+        SectionHeader("缓存")
+        Spacer(Modifier.height(6.dp))
+        SwitchRow(
+            title = "缓存配置到本地",
+            subtitle = "开启后配置与直播源缓存在本地, 启动不再联网拉取; 默认关闭",
+            checked = cacheOn,
+            onCheckedChange = { v ->
+                ConfigCache.setEnabled(v)
+                // 开启时立即联网拉一次建立缓存; 关闭时缓存已清空.
+                if (v) scope.launch { updateCache() }
+            },
+        )
+        if (cacheOn) {
+            val fmt = remember { java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()) }
+            val cfgTime = remember(cacheRevision) { ConfigCache.timeOf(ConfigCache.KIND_TVBOX) }
+            val liveTime = remember(cacheRevision) { ConfigCache.timeOf(ConfigCache.KIND_LIVE) }
+            Text(
+                text = "配置缓存: " + (if (cfgTime > 0) fmt.format(java.util.Date(cfgTime)) else "无") +
+                    "    直播缓存: " + (if (liveTime > 0) fmt.format(java.util.Date(liveTime)) else "无"),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+            Row {
+                SettingsActionButton(
+                    label = "更新缓存",
+                    filled = true,
+                    enabled = !busy,
+                    onClick = { scope.launch { updateCache() } },
+                )
+            }
+        }
+
+        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
         // ---------------- 首页 ----------------
         SectionHeader("首页")
         Spacer(Modifier.height(6.dp))
@@ -475,6 +552,10 @@ fun SettingsScreen() {
                         try {
                             val jar = File(context.filesDir, "main.jar")
                             if (jar.exists()) jar.delete()
+                            // 本地缓存模式会复用已下载的主 jar, 清理时一并删除以便重新下载.
+                            context.filesDir.listFiles { f ->
+                                f.name.startsWith("main_") && f.name.endsWith(".jar")
+                            }?.forEach { it.delete() }
                         } catch (_: Exception) {
                         }
                         ConfigStore.saveUrl(urlInput.trim())

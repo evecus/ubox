@@ -4,6 +4,7 @@ import android.app.Application
 import com.github.catvod.server.LocalServer
 import com.mobile.js.App
 import com.me.ubox.data.Ctx
+import com.me.ubox.data.ConfigCache
 import com.me.ubox.data.HomePrefs
 import com.me.ubox.data.SiteFilter
 import com.me.ubox.data.live.LiveStore
@@ -33,6 +34,7 @@ class UBoxApplication : Application() {
         DanmuSettings.load()
         HomePrefs.load()
         SiteFilter.load()
+        ConfigCache.load()
         LiveStore.init()
     }
 }

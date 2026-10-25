@@ -185,7 +185,7 @@ class LiveViewModel : ViewModel() {
         viewModelScope.launch {
             _loading.value = true
             _error.value = ""
-            val (ok, msg, groups) = LiveStore.fetchAndParse(LiveStore.liveUrl.value)
+            val (ok, msg, groups) = LiveStore.fetchAndParse(LiveStore.liveUrl.value, useCache = true)
             if (!ok) {
                 _loading.value = false
                 _error.value = msg
