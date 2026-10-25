@@ -229,6 +229,7 @@ private fun PhoneSearchLayout(
                 title = {
                     Box(
                         modifier = Modifier
+                            .fillMaxWidth()
                             .height(40.dp)
                             .border(
                                 width = 1.2.dp,
@@ -238,24 +239,41 @@ private fun PhoneSearchLayout(
                             .padding(horizontal = 16.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        OutlinedTextField(
+                        // 用 BasicTextField 而非 OutlinedTextField: 后者最小高度 56dp,
+                        // 放进 40dp 外框会把文字上下裁掉.
+                        BasicTextField(
                             value = input,
                             onValueChange = onInputChange,
                             singleLine = true,
-                            placeholder = { Text("搜索影片 / 演员 / 关键词") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(inputFocusRequester),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            cursorBrush = androidx.compose.ui.graphics.SolidColor(
+                                MaterialTheme.colorScheme.onSurface,
+                            ),
                             keyboardActions = KeyboardActions(
                                 onSearch = { onSubmitQuery() },
                             ),
                             keyboardOptions = KeyboardOptions(
                                 imeAction = ImeAction.Search,
                             ),
-                            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent,
-                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(inputFocusRequester),
+                            decorationBox = { inner ->
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (input.isEmpty()) {
+                                        Text(
+                                            text = "搜索影片 / 演员 / 关键词",
+                                            maxLines = 1,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp),
+                                        )
+                                    }
+                                    inner()
+                                }
+                            },
                         )
                     }
                 },

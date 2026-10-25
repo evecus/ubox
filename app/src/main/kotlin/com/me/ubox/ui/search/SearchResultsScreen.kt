@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,6 +55,9 @@ import com.me.ubox.ui.components.VodPoster
  * 多出的列宽归入间距 (1080p TV 上卡片净间距约 49dp, 平板上约 22dp).
  */
 private val tvPosterWidth = 150.dp
+
+/** 手机端左侧站源栏宽度 (TV/平板仍为 160dp). */
+private val phoneFilterWidth = 122.dp
 
 /**
  * 搜索结果页 (与搜索页分离的独立页面):
@@ -147,8 +151,10 @@ private fun SearchResultsBody(
         }
         Row(modifier = Modifier.fillMaxSize()) {
             // 左侧: "全部" + 有结果的源
-            Box(modifier = Modifier.width(160.dp)) {
+            // 手机端左栏收窄 (字号/内边距同步缩小), 把宽度让给右侧结果; TV/平板保持原尺寸.
+            Box(modifier = Modifier.width(if (tv) 160.dp else phoneFilterWidth)) {
                 SiteFilterList(
+                    compact = !tv,
                     sites = vm.sitesWithResults(),
                     filter = filter,
                     onFilter = vm::setFilter,
@@ -194,7 +200,7 @@ private fun SearchResultsBody(
                     // 手机: 单列列表.
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 4.dp, top = 4.dp, end = 10.dp, bottom = 12.dp),
+                        contentPadding = PaddingValues(start = 2.dp, top = 4.dp, end = 8.dp, bottom = 12.dp),
                     ) {
                         items(flat) { hit ->
                             SearchResultRow(
@@ -211,16 +217,22 @@ private fun SearchResultsBody(
 
 @Composable
 private fun SiteFilterList(
+    compact: Boolean,
     sites: List<Site>,
     filter: String?,
     onFilter: (String?) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 6.dp, top = 4.dp, end = 4.dp, bottom = 12.dp),
+        contentPadding = if (compact) {
+            PaddingValues(start = 4.dp, top = 4.dp, end = 2.dp, bottom = 12.dp)
+        } else {
+            PaddingValues(start = 6.dp, top = 4.dp, end = 4.dp, bottom = 12.dp)
+        },
     ) {
         item {
             SiteFilterTile(
+                compact = compact,
                 name = "全部",
                 selected = filter == null,
                 onClick = { onFilter(null) },
@@ -228,6 +240,7 @@ private fun SiteFilterList(
         }
         items(sites) { site ->
             SiteFilterTile(
+                compact = compact,
                 name = site.name,
                 selected = filter == site.key,
                 onClick = { onFilter(site.key) },
@@ -238,6 +251,7 @@ private fun SiteFilterList(
 
 @Composable
 private fun SiteFilterTile(
+    compact: Boolean,
     name: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -253,15 +267,23 @@ private fun SiteFilterTile(
                 shape = RoundedCornerShape(12.dp),
             )
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp, vertical = 16.dp),
+            .padding(
+                horizontal = if (compact) 4.dp else 8.dp,
+                vertical = if (compact) 10.dp else 16.dp,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = name,
-            maxLines = 1,
+            // 手机窄栏允许两行, 避免站名被截成 "玩偶哥哥 | 4..." 这样.
+            maxLines = if (compact) 2 else 1,
             overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 17.sp),
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = if (compact) 13.sp else 17.sp,
+                lineHeight = if (compact) 17.sp else 24.sp,
+            ),
         )
     }
 }
