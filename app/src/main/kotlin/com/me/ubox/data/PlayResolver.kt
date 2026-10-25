@@ -64,7 +64,7 @@ object PlayResolver {
             if (!headers.keys.any { it.equals("User-Agent", ignoreCase = true) }) {
                 headers["User-Agent"] = Http.DEFAULT_UA
             }
-            PlayInfo(url, headers, danmaku = JsonUtil.optStringOrNull(json, "danmaku") ?: "")
+            PlayInfo(url, headers, danmaku = normalizeDanmaku(JsonUtil.optStringOrNull(json, "danmaku") ?: ""))
         } catch (_: Exception) {
             null
         }
@@ -99,6 +99,40 @@ object PlayResolver {
             }
         }
         return out
+    }
+
+    /**
+     * playerContent 的 danmaku 字段可能是: 地址 / 内联 XML 字符串 (原版只支持这种),
+     * 也可能是 [{"name":..,"url":..}] 数组或 {"url":..} 对象 (部分站源/新版规范).
+     * 上游用 optString 取值, 数组/对象会变成一段 JSON 文本, 原样当弹幕源只会解析出 0 条;
+     * 这里统一取出首个可用地址.
+     */
+    private fun normalizeDanmaku(raw: String): String {
+        val t = raw.trim()
+        if (t.isEmpty()) return ""
+        return try {
+            when {
+                t.startsWith("[") -> {
+                    val arr = org.json.JSONArray(t)
+                    for (i in 0 until arr.length()) {
+                        val u = when (val item = arr.opt(i)) {
+                            is String -> item
+                            is JSONObject -> item.optString("url").ifEmpty { item.optString("danmaku") }
+                            else -> ""
+                        }
+                        if (u.isNotBlank()) return u.trim()
+                    }
+                    ""
+                }
+                t.startsWith("{") -> {
+                    val o = JSONObject(t)
+                    o.optString("url").ifEmpty { o.optString("danmaku") }.trim()
+                }
+                else -> t
+            }
+        } catch (_: Exception) {
+            t
+        }
     }
 
     private fun decodeJson(text: String): JSONObject? {

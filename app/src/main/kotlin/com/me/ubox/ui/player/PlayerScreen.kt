@@ -181,64 +181,18 @@ fun PlayerScreen(
 
     val epName = if (idx in epNames.indices) epNames[idx] else "第${idx + 1}集"
 
+    // 手机全屏时系统返回键先退出全屏, 而不是直接退出播放页.
+    BackHandler(enabled = !tv && phoneFullscreen) { phoneFullscreen = false }
+
     if (!tv) {
-        // ---------------- 手机: 原布局 (AppBar + 16:9 视频 + 控制条 + 竖排选集) ----------------
-        // 全屏态 (横屏 + 视频铺满 + 控制层 overlay) 见上方 phoneFullscreen.
-        if (phoneFullscreen) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black),
-            ) {
-                VideoSurface(
-                    vm = vm,
-                    videoAspectRatio = if (videoAspectRatio > 0f) videoAspectRatio else null,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                DanmakuLayer(modifier = Modifier.fillMaxSize())
-                // 点击画面: 显示/隐藏控制层 (控制条在其上方, 各自消费点击).
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .clickable(
-                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                            indication = null,
-                        ) { phoneOverlay = !phoneOverlay },
-                )
-                if (phoneOverlay || loading || error.isNotEmpty()) {
-                    Box(modifier = Modifier.align(Alignment.TopCenter)) {
-                        PhoneFullscreenTopBar(
-                            title = "$vodName · $epName",
-                            onBack = onBack,
-                            onExitFullscreen = { phoneFullscreen = false },
-                        )
-                    }
-                    Box(modifier = Modifier.align(Alignment.BottomCenter)) {
-                        PhoneControlBar(
-                            playing = playing,
-                            positionMs = positionMs,
-                            durationMs = durationMs,
-                            fullscreen = true,
-                            onPlayPause = { phoneOverlayTick++; vm.playOrPause() },
-                            onSeekBy = { phoneOverlayTick++; vm.seekBy(it) },
-                            onSeekTo = { phoneOverlayTick++; vm.seekTo(it) },
-                            onToggleFullscreen = { phoneFullscreen = false },
-                        )
-                    }
-                }
-                if (loading || error.isNotEmpty()) {
-                    StatusView(
-                        error = error,
-                        onBack = onBack,
-                        onRetry = vm::retry,
-                        hasNext = idx + 1 < epUrls.size,
-                        onNext = vm::playNext,
-                    )
-                }
-            }
-        } else {
-            androidx.compose.material3.Scaffold(
-                topBar = {
+        // ---------------- 手机: 单一布局树 (AppBar + 16:9 视频 + 控制条 + 竖排选集) ----------------
+        // 全屏 / 非全屏共用**同一棵布局树里的同一个视频容器节点**: VideoSurface 与 DanmakuLayer
+        // 始终在同一位置、不随全屏切换被销毁重建. 以前全屏与非全屏是两个 if 分支, 切换时 SurfaceView
+        // 与 DanmakuView 各被重建一次, 弹幕视图丢失; 现在只改容器尺寸 (铺满 / 16:9) 与周边 UI 的显隐.
+        androidx.compose.material3.Scaffold(
+            containerColor = if (phoneFullscreen) Color.Black else MaterialTheme.colorScheme.background,
+            topBar = {
+                if (!phoneFullscreen) {
                     TopAppBar(
                         title = { Text("$vodName · $epName", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         navigationIcon = {
@@ -266,28 +220,71 @@ fun PlayerScreen(
                             }
                         },
                     )
-                },
-            ) { padding ->
-                // Video 必须始终挂载: 以前 loading 时整页换成状态视图, open 完成后才创建 Video,
-                // 纹理在"无人消费"的状态下起播, 部分机型因此有声无画.
-                Column(
-                    modifier = Modifier
-                        .padding(padding)
-                        .fillMaxSize(),
+                }
+            },
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize(),
+            ) {
+                Box(
+                    modifier = (
+                        if (phoneFullscreen) Modifier.fillMaxSize()
+                        else Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                        ).background(Color.Black),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(16f / 9f)
-                            .background(Color.Black),
-                    ) {
-                        VideoSurface(
-                            vm = vm,
-                            videoAspectRatio = if (videoAspectRatio > 0f) videoAspectRatio else null,
-                            modifier = Modifier.fillMaxSize(),
+                    // Video 必须始终挂载: 以前 loading 时整页换成状态视图, open 完成后才创建 Video,
+                    // 纹理在"无人消费"的状态下起播, 部分机型因此有声无画.
+                    VideoSurface(
+                        vm = vm,
+                        videoAspectRatio = if (videoAspectRatio > 0f) videoAspectRatio else null,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    DanmakuLayer(modifier = Modifier.fillMaxSize())
+                    if (phoneFullscreen) {
+                        // 点击画面: 显示/隐藏控制层 (控制条在其上方, 各自消费点击).
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clickable(
+                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                    indication = null,
+                                ) { phoneOverlay = !phoneOverlay },
                         )
-                        DanmakuLayer(modifier = Modifier.fillMaxSize())
+                        if (phoneOverlay || loading || error.isNotEmpty()) {
+                            Box(modifier = Modifier.align(Alignment.TopCenter)) {
+                                PhoneFullscreenTopBar(
+                                    title = "$vodName · $epName",
+                                    onBack = onBack,
+                                    onExitFullscreen = { phoneFullscreen = false },
+                                )
+                            }
+                            Box(modifier = Modifier.align(Alignment.BottomCenter)) {
+                                PhoneControlBar(
+                                    playing = playing,
+                                    positionMs = positionMs,
+                                    durationMs = durationMs,
+                                    fullscreen = true,
+                                    onPlayPause = { phoneOverlayTick++; vm.playOrPause() },
+                                    onSeekBy = { phoneOverlayTick++; vm.seekBy(it) },
+                                    onSeekTo = { phoneOverlayTick++; vm.seekTo(it) },
+                                    onToggleFullscreen = { phoneFullscreen = false },
+                                )
+                            }
+                        }
+                        if (loading || error.isNotEmpty()) {
+                            StatusView(
+                                error = error,
+                                onBack = onBack,
+                                onRetry = vm::retry,
+                                hasNext = idx + 1 < epUrls.size,
+                                onNext = vm::playNext,
+                            )
+                        }
                     }
+                }
+                if (!phoneFullscreen) {
                     // 播放控制条 (对照原版 AdaptiveVideoControls: 播放/暂停 + 快退/快进
                     // + 进度条 seek + 全屏).
                     PhoneControlBar(
@@ -547,7 +544,9 @@ private fun DanmakuLayer(modifier: Modifier = Modifier) {
                 DanmakuView(ctx).also { DanmakuManager.attach(it) }
             },
             onRelease = { view ->
-                DanmakuManager.detach()
+                // 只摘掉"自己": 切换布局分支时新视图的 factory 先于旧视图的 onRelease,
+                // 无条件 detach 会把刚 attach 的新视图摘掉 → 全屏/重建后弹幕消失.
+                DanmakuManager.detach(view)
                 try {
                     view.release()
                 } catch (_: Exception) {

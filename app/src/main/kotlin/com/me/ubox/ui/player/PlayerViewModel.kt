@@ -13,6 +13,7 @@ import com.me.ubox.data.History
 import com.me.ubox.data.PlayResolver
 import com.me.ubox.data.Site
 import com.me.ubox.data.WatchProgress
+import com.me.ubox.danmaku.DanmakuLoadResult
 import com.me.ubox.danmaku.DanmakuManager
 import com.me.ubox.danmaku.DanmuSettings
 import com.me.ubox.engine.EngineClient
@@ -92,6 +93,12 @@ class PlayerViewModel(
 
     /** 当前集是否已触发过弹幕搜索 (设置里开启弹幕后据此补搜). */
     private var danmakuSearched = false
+
+    /** 当前集爬虫 playerContent 自带的弹幕源 (空 = 没有); 弹幕关→开时复用, 不丢掉自带弹幕. */
+    private var episodeDanmakuSource = ""
+
+    /** 当前集的弹幕加载任务: 换集/重新触发时取消上一个, 避免旧集结果晚到. */
+    private var danmakuJob: kotlinx.coroutines.Job? = null
 
     val epName: String
         get() = if (_idx.value in epNames.indices) epNames[_idx.value] else "第${_idx.value + 1}集"
@@ -207,10 +214,11 @@ class PlayerViewModel(
         restorePos = 0
         restoreDone = false
         danmakuSearched = false
-        // 换集: 重置弹幕 (对照 NovaTV 的 resetDanmuState / check("")).
-        // 注意这里不再无脑发起云搜 —— 对齐 UBox PlayFragment:
-        //   爬虫 playerContent 自带了 danmaku 就直接用它; 只有没带时才云搜.
-        DanmakuManager.clear()
+        // 换集: 重置弹幕 (对照原版 PlayActivity.resetDanmuState → DanmuLoadController.reset):
+        // 取消上一集在途的搜索/加载并清空画面. 只 clear 不 reset 的话, 上一集的搜索结果
+        // 晚到时会把旧弹幕装进新一集.
+        danmakuJob?.cancel()
+        DanmakuManager.reset()
         val site = site
         if (site == null) {
             _loading.value = false
@@ -263,15 +271,33 @@ class PlayerViewModel(
     }
 
     /**
-     * 弹幕入口 (对照 UBox PlayFragment 的 searchDanmu / checkDanmu):
-     *   - [source] 非空 = 爬虫自带弹幕地址, 直接加载;
+     * 弹幕入口 (对照原版 PlayActivity 播放信息回调里的弹幕分支):
+     *
+     *   if (danmaku.isEmpty()) { checkDanmu(""); searchDanmu(""); }
+     *   else checkDanmu(danmaku, onFailed = { searchDanmu("") });
+     *
+     *   - [source] 非空 = 爬虫自带弹幕: 先直接加载; **加载失败 (拉取失败/解析为空) 回退云搜**;
      *   - 为空 = 用 片名 + 集名 走内置/自定义接口自动搜索.
+     * 以前自带弹幕失败后没有回退, 表现为"只有手动云搜才有弹幕".
      */
     private fun startDanmaku(source: String) {
+        episodeDanmakuSource = source.trim()
         danmakuSearched = true
-        viewModelScope.launch {
-            if (source.trim().isNotEmpty()) {
-                DanmakuManager.loadSource(source.trim())
+        launchDanmakuLoad()
+    }
+
+    private fun launchDanmakuLoad() {
+        danmakuJob?.cancel()
+        val src = episodeDanmakuSource
+        danmakuJob = viewModelScope.launch {
+            // 弹幕关闭时不加载; 之后开启走 toggleDanmu → 再次进入这里.
+            if (!DanmuSettings.open) return@launch
+            if (src.isNotEmpty()) {
+                val r = DanmakuManager.loadSource(src, silent = true)
+                // SUPERSEDED = 已被换集/手动云搜作废, 不能再回退; 其余失败都回退云搜.
+                if (r == DanmakuLoadResult.FAILED || r == DanmakuLoadResult.EMPTY) {
+                    DanmakuManager.loadBySearch(vodName, epName)
+                }
             } else {
                 DanmakuManager.loadBySearch(vodName, epName)
             }
@@ -342,7 +368,7 @@ class PlayerViewModel(
             DanmakuManager.applySettings()
             if (next && !DanmakuManager.hasDanmaku) {
                 danmakuSearched = true
-                DanmakuManager.loadBySearch(vodName, epName)
+                launchDanmakuLoad()
             }
             // 对照 Flutter 版 _showMsg(next ? '弹幕已开启' : '弹幕已关闭')
             AppSnackbar.show(if (next) "弹幕已开启" else "弹幕已关闭")
@@ -351,7 +377,9 @@ class PlayerViewModel(
 
     /** 云搜选中结果 → 直接加载. */
     fun loadDanmakuSource(source: String) {
-        viewModelScope.launch {
+        // 手动选择优先: 取消仍在进行的自动加载 (loadSource 取号后旧加载也会被作废).
+        danmakuJob?.cancel()
+        danmakuJob = viewModelScope.launch {
             DanmakuManager.loadSource(source)
         }
     }
@@ -382,8 +410,9 @@ class PlayerViewModel(
         if (pos > 0) {
             saveProgress(pos, player.duration.coerceAtLeast(0L).toInt())
         }
-        DanmakuManager.clear()
-        DanmakuManager.detach()
+        danmakuJob?.cancel()
+        DanmakuManager.reset()
+        DanmakuManager.detachAll()
         player.release()
         super.onCleared()
     }

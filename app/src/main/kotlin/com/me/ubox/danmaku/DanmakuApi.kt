@@ -1,6 +1,7 @@
 package com.me.ubox.danmaku
 
 import com.me.ubox.data.ConfigStore
+import com.mobile.js.Trans
 import com.me.ubox.data.Http
 import com.me.ubox.data.JsonUtil
 import kotlinx.coroutines.delay
@@ -134,8 +135,12 @@ object DanmakuApi {
     }
 
     /** 内置 echo-danmaku 全流程. */
-    private suspend fun searchBuiltin(apiUrl: String, name: String, episode: String, seq: Int): String? {
+    private suspend fun searchBuiltin(apiUrl: String, rawName: String, rawEpisode: String, seq: Int): String? {
         val base = normalizeBaseUrl(apiUrl)
+        // 对照原版 searchBuiltin: 片名与集名先过 Trans.t2s. 注意 Trans 与原版一致, 只在系统区域为 TW 时才
+        // 真正转换, 其它区域是原样返回 (所以对大陆设备是空操作, 这里只是保持与原版行为一致).
+        val name = Trans.t2s(rawName)
+        val episode = Trans.t2s(rawEpisode)
 
         // 1) search/episodes: 先带集数数字查; 未命中再用不带集数的全量结果查一次.
         var queryMode = QUERY_NUMBER
@@ -200,7 +205,7 @@ object DanmakuApi {
         return try {
             if (!hasPlaceholder(apiUrl) && !isDanmakuSearchApi(apiUrl)) {
                 val base = normalizeBaseUrl(apiUrl)
-                val body = getWithRetry("$base/api/v2/search/episodes?anime=${encode(name)}")
+                val body = getWithRetry("$base/api/v2/search/episodes?anime=${encode(Trans.t2s(name))}")
                 return DanmuSearchListResult.ok(parseBuiltinSearchList(body, base))
             }
             val body: String = if (hasPlaceholder(apiUrl)) {
@@ -443,7 +448,9 @@ object DanmakuApi {
                 if (targetNumber > 0 && extractNumber(title) == targetNumber) return match
             }
             if (episode.isEmpty()) return first
-            if (allowMovieFallback) firstMandarin ?: first else null
+            // 对照原版: 只有"电影"列表才回落到 国语/第一条; 电视剧集数没匹配上就是没匹配上,
+            // 回落成第一集会把别的集数的弹幕装进来 (张冠李戴).
+            if (allowMovieFallback && episodeList.isMovie) firstMandarin ?: first else null
         } catch (_: Exception) {
             null
         }

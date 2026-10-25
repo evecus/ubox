@@ -142,7 +142,7 @@ object Danmu {
  * 网络拉取/解压在构造前由 [DanmakuParser] 完成 (IO 线程), 与 UBox 的
  * "executor 里 resolveContent + Danmu.fromXml, 主线程 prepare" 模式一致.
  */
-class NovaDanmakuParser(private val items: List<DanmuItem>) : BaseDanmakuParser() {
+class NovaDanmakuParser(val items: List<DanmuItem>) : BaseDanmakuParser() {
 
     private var scaleX = 1f
     private var scaleY = 1f
