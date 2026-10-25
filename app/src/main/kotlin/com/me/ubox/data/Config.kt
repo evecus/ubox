@@ -471,6 +471,10 @@ object ConfigStore {
     private const val PREF_URL = "configUrl"
     private const val PREF_LINES = "configLines"
 
+    /** 可用源 (引擎支持) 套用"站源过滤"后的列表: 首页站源选择 / 搜索 / 换源共用. */
+    fun visibleSites(): List<Site> =
+        SiteFilter.apply(loaded.value?.sites?.filter { it.isRealSource } ?: emptyList())
+
     fun markLoaded(config: Config?) {
         _loaded.value = config
     }
@@ -522,6 +526,9 @@ object ConfigStore {
     fun loadUrl(): String = Ctx.prefs.getString(PREF_URL, "") ?: ""
 
     fun saveUrl(url: String) {
+        // 配置地址变化 (导入新配置 / 切线路 / 清除) → 站源过滤作废并清空;
+        // 启动时用同一地址重载配置不算变化, 过滤保留.
+        if (url != loadUrl()) SiteFilter.clear()
         Ctx.prefs.edit().putString(PREF_URL, url).apply()
     }
 

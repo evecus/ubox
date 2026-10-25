@@ -57,8 +57,18 @@ class SearchResultsViewModel(
     private val _focusFirstResult = MutableStateFlow(false)
     val focusFirstResult: StateFlow<Boolean> = _focusFirstResult.asStateFlow()
 
+    /**
+     * 本次搜索使用的源: 指定了单个源 (搜索页的源站选择) 就只用它;
+     * 否则用套用了站源过滤的源列表.
+     */
+    private fun resolveSites(): List<Site> {
+        val all = ConfigStore.loaded.value?.sites?.filter { it.isRealSource } ?: emptyList()
+        return searchSiteKey?.let { key -> all.filter { it.key == key } }
+            ?: com.me.ubox.data.SiteFilter.apply(all)
+    }
+
     init {
-        _sites.value = ConfigStore.loaded.value?.sites?.filter { it.isRealSource } ?: emptyList()
+        _sites.value = resolveSites()
         if (initialQuery.isNotEmpty()) {
             search(initialQuery)
         }
@@ -68,15 +78,14 @@ class SearchResultsViewModel(
         val query = q.trim()
         if (query.isEmpty() || _running.value) return
         _query.value = query
+        _sites.value = resolveSites()
         _running.value = true
         _done.value = 0
         _filter.value = null
         _results.value = emptyMap()
         _focusFirstResult.value = false
         viewModelScope.launch {
-            val targets = searchSiteKey
-                ?.let { key -> _sites.value.filter { it.key == key } }
-                ?: _sites.value
+            val targets = _sites.value
             targets.map { site ->
                 async {
                     try {

@@ -61,6 +61,8 @@ import com.me.ubox.TvMode
 import com.me.ubox.data.ConfigStore
 import com.me.ubox.data.History
 import com.me.ubox.data.HomePrefs
+import com.me.ubox.data.SiteFilter
+import com.me.ubox.ui.dialogs.SiteFilterSheet
 import com.me.ubox.data.WatchProgress
 import com.me.ubox.data.live.LiveStore
 import com.me.ubox.danmaku.DanmakuApi
@@ -115,6 +117,8 @@ fun SettingsScreen() {
     var liveStatus by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
     var showHomeRecPicker by remember { mutableStateOf(false) }
+    var showSiteFilter by remember { mutableStateOf(false) }
+    val siteFilterKeys by SiteFilter.keys.collectAsStateWithLifecycle()
     var showTvModePicker by remember { mutableStateOf(false) }
     var showDecoderPicker by remember { mutableStateOf(false) }
     val decoderMode by com.me.ubox.player.DecoderPrefs.mode.collectAsStateWithLifecycle()
@@ -350,6 +354,26 @@ fun SettingsScreen() {
             colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier.clickableSetting { showHomeRecPicker = true },
         )
+        // 站源过滤: 配置会加载全部源, 这里只保留需要的源给首页/搜索使用.
+        run {
+            val all = loaded?.sites?.filter { it.isRealSource } ?: emptyList()
+            val kept = if (siteFilterKeys.isEmpty()) all.size else all.count { it.key in siteFilterKeys }
+            ListItem(
+                headlineContent = { Text("站源过滤") },
+                supportingContent = {
+                    Text(
+                        when {
+                            all.isEmpty() -> "请先导入配置"
+                            siteFilterKeys.isEmpty() || kept == 0 -> "未过滤 (使用全部 ${all.size} 个源)"
+                            else -> "已保留 $kept / ${all.size} 个源 (首页与搜索仅使用这些)"
+                        },
+                    )
+                },
+                leadingContent = { Icon(Icons.Filled.Tune, contentDescription = null) },
+                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.clickableSetting { if (all.isNotEmpty()) showSiteFilter = true },
+            )
+        }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
         // ---------------- 界面 ----------------
@@ -521,6 +545,17 @@ fun SettingsScreen() {
                 }
             },
             onDismiss = { showImport = false },
+        )
+    }
+    if (showSiteFilter) {
+        SiteFilterSheet(
+            sites = loaded?.sites?.filter { it.isRealSource } ?: emptyList(),
+            selected = siteFilterKeys,
+            onConfirm = {
+                showSiteFilter = false
+                SiteFilter.set(it)
+            },
+            onDismiss = { showSiteFilter = false },
         )
     }
     if (showHomeRecPicker) {

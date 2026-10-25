@@ -42,7 +42,11 @@ class SearchViewModel : ViewModel() {
     private var suggestJob: Job? = null
 
     init {
-        _sites.value = ConfigStore.loaded.value?.sites?.filter { it.isRealSource } ?: emptyList()
+        _sites.value = ConfigStore.visibleSites()
+        viewModelScope.launch {
+            // 设置里改了站源过滤后, 搜索页的源数量/源选择同步刷新.
+            com.me.ubox.data.SiteFilter.keys.collect { _sites.value = ConfigStore.visibleSites() }
+        }
         viewModelScope.launch {
             val names = DoubanHot.fetch().map { it.name }.filter { it.isNotEmpty() }.take(20)
             // 豆瓣抓取失败时回退原版默认热词 (对照原版 useDefaultHotWords).

@@ -5,6 +5,7 @@ import com.github.catvod.server.LocalServer
 import com.mobile.js.App
 import com.me.ubox.data.Ctx
 import com.me.ubox.data.HomePrefs
+import com.me.ubox.data.SiteFilter
 import com.me.ubox.data.live.LiveStore
 import com.me.ubox.danmaku.DanmuSettings
 import com.whl.quickjs.android.QuickJSLoader
@@ -31,6 +32,7 @@ class UBoxApplication : Application() {
         TvMode.init()
         DanmuSettings.load()
         HomePrefs.load()
+        SiteFilter.load()
         LiveStore.init()
     }
 }

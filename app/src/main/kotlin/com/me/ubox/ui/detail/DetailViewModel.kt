@@ -116,7 +116,9 @@ class DetailViewModel(
     /** 换源候选: 除当前源外的可用源 (对照 Flutter 版 _showSwitchMenu). */
     fun switchCandidates(): List<Site> {
         val loaded = ConfigStore.loaded.value ?: return emptyList()
-        return loaded.sites.filter { it.isRealSource && it.key != siteKey }
+        return com.me.ubox.data.SiteFilter
+            .apply(loaded.sites.filter { it.isRealSource })
+            .filter { it.key != siteKey }
     }
 
     /**

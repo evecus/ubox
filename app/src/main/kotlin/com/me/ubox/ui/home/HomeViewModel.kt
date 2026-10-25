@@ -10,6 +10,7 @@ import com.me.ubox.data.History
 import com.me.ubox.data.HomePrefs
 import com.me.ubox.data.JsonUtil
 import com.me.ubox.data.Site
+import com.me.ubox.data.SiteFilter
 import com.me.ubox.data.SpiderData
 import com.me.ubox.data.VodItem
 import com.me.ubox.data.classList
@@ -85,13 +86,19 @@ class HomeViewModel : ViewModel() {
             ConfigStore.loaded.value!!.sites.any { it.isRealSource }
 
     private val realSites: List<Site>
-        get() = ConfigStore.loaded.value?.sites?.filter { it.isRealSource } ?: emptyList()
+        get() = ConfigStore.visibleSites()
 
     init {
         viewModelScope.launch {
             // 首页列表数据来源变化 (设置页切换) → 重载"主页" Tab.
             HomePrefs.recNotifier.collect {
                 if (started) reloadHomeTab()
+            }
+        }
+        viewModelScope.launch {
+            // 站源过滤变化 → 重新解析首页源 (当前源被过滤掉时切到第一个保留的源).
+            SiteFilter.keys.collect {
+                if (started && hasConfig) onConfigChanged(first = false)
             }
         }
         viewModelScope.launch {
