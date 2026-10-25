@@ -44,8 +44,8 @@ class SearchViewModel : ViewModel() {
     init {
         _sites.value = ConfigStore.visibleSites()
         viewModelScope.launch {
-            // 设置里改了站源过滤后, 搜索页的源数量/源选择同步刷新.
-            com.me.ubox.data.SiteFilter.keys.collect { _sites.value = ConfigStore.visibleSites() }
+            // 设置里改了站源黑名单后, 搜索页的源数量/源选择同步刷新.
+            com.me.ubox.data.SiteFilter.keywords.collect { _sites.value = ConfigStore.visibleSites() }
         }
         viewModelScope.launch {
             val names = DoubanHot.fetch().map { it.name }.filter { it.isNotEmpty() }.take(20)

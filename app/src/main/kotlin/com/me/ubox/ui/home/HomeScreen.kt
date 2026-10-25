@@ -100,10 +100,10 @@ fun HomeScreen(
     val message by vm.message.collectAsStateWithLifecycle()
 
     val hasConfig = config != null && config!!.sites.any { it.isRealSource }
-    val siteFilterKeys by com.me.ubox.data.SiteFilter.keys.collectAsStateWithLifecycle()
+    val siteBlacklist by com.me.ubox.data.SiteFilter.keywords.collectAsStateWithLifecycle()
     val sites = com.me.ubox.data.SiteFilter.apply(
         config?.sites?.filter { it.isRealSource } ?: emptyList(),
-        siteFilterKeys,
+        siteBlacklist,
     )
 
     var showSitePicker by remember { mutableStateOf(false) }

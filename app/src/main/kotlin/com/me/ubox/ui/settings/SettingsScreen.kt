@@ -62,7 +62,7 @@ import com.me.ubox.data.ConfigStore
 import com.me.ubox.data.History
 import com.me.ubox.data.HomePrefs
 import com.me.ubox.data.SiteFilter
-import com.me.ubox.ui.dialogs.SiteFilterSheet
+import com.me.ubox.ui.dialogs.SiteBlacklistSheet
 import com.me.ubox.data.WatchProgress
 import com.me.ubox.data.live.LiveStore
 import com.me.ubox.danmaku.DanmakuApi
@@ -118,7 +118,7 @@ fun SettingsScreen() {
     var showImport by remember { mutableStateOf(false) }
     var showHomeRecPicker by remember { mutableStateOf(false) }
     var showSiteFilter by remember { mutableStateOf(false) }
-    val siteFilterKeys by SiteFilter.keys.collectAsStateWithLifecycle()
+    val siteBlacklist by SiteFilter.keywords.collectAsStateWithLifecycle()
     var showTvModePicker by remember { mutableStateOf(false) }
     var showDecoderPicker by remember { mutableStateOf(false) }
     val decoderMode by com.me.ubox.player.DecoderPrefs.mode.collectAsStateWithLifecycle()
@@ -354,24 +354,24 @@ fun SettingsScreen() {
             colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
             modifier = Modifier.clickableSetting { showHomeRecPicker = true },
         )
-        // 站源过滤: 配置会加载全部源, 这里只保留需要的源给首页/搜索使用.
+        // 站源黑名单: 名称命中关键词的源, 首页/搜索/换源都不使用; 换配置不会清空.
         run {
             val all = loaded?.sites?.filter { it.isRealSource } ?: emptyList()
-            val kept = if (siteFilterKeys.isEmpty()) all.size else all.count { it.key in siteFilterKeys }
+            val blocked = all.count { SiteFilter.isBlocked(it, siteBlacklist) }
             ListItem(
-                headlineContent = { Text("站源过滤") },
+                headlineContent = { Text("站源黑名单") },
                 supportingContent = {
                     Text(
                         when {
-                            all.isEmpty() -> "请先导入配置"
-                            siteFilterKeys.isEmpty() || kept == 0 -> "未过滤 (使用全部 ${all.size} 个源)"
-                            else -> "已保留 $kept / ${all.size} 个源 (首页与搜索仅使用这些)"
+                            siteBlacklist.isEmpty() -> "未设置 (使用全部源), 点击添加屏蔽关键词"
+                            all.isEmpty() -> "${siteBlacklist.size} 个关键词 (导入配置后生效)"
+                            else -> "${siteBlacklist.size} 个关键词, 当前屏蔽 $blocked / ${all.size} 个源"
                         },
                     )
                 },
                 leadingContent = { Icon(Icons.Filled.Tune, contentDescription = null) },
                 colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier.clickableSetting { if (all.isNotEmpty()) showSiteFilter = true },
+                modifier = Modifier.clickableSetting { showSiteFilter = true },
             )
         }
 
@@ -548,13 +548,11 @@ fun SettingsScreen() {
         )
     }
     if (showSiteFilter) {
-        SiteFilterSheet(
+        SiteBlacklistSheet(
             sites = loaded?.sites?.filter { it.isRealSource } ?: emptyList(),
-            selected = siteFilterKeys,
-            onConfirm = {
-                showSiteFilter = false
-                SiteFilter.set(it)
-            },
+            keywords = siteBlacklist,
+            onAdd = { SiteFilter.add(it) },
+            onRemove = { SiteFilter.remove(it) },
             onDismiss = { showSiteFilter = false },
         )
     }

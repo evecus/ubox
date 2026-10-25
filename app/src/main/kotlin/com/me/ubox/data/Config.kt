@@ -526,9 +526,6 @@ object ConfigStore {
     fun loadUrl(): String = Ctx.prefs.getString(PREF_URL, "") ?: ""
 
     fun saveUrl(url: String) {
-        // 配置地址变化 (导入新配置 / 切线路 / 清除) → 站源过滤作废并清空;
-        // 启动时用同一地址重载配置不算变化, 过滤保留.
-        if (url != loadUrl()) SiteFilter.clear()
         Ctx.prefs.edit().putString(PREF_URL, url).apply()
     }
 

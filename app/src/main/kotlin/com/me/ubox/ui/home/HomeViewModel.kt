@@ -96,8 +96,8 @@ class HomeViewModel : ViewModel() {
             }
         }
         viewModelScope.launch {
-            // 站源过滤变化 → 重新解析首页源 (当前源被过滤掉时切到第一个保留的源).
-            SiteFilter.keys.collect {
+            // 站源黑名单变化 → 重新解析首页源 (当前源被屏蔽时切到第一个未屏蔽的源).
+            SiteFilter.keywords.collect {
                 if (started && hasConfig) onConfigChanged(first = false)
             }
         }
