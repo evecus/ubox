@@ -76,7 +76,6 @@ import com.me.ubox.ui.components.SectionHeader
 import com.me.ubox.ui.components.TvButton
 import com.me.ubox.ui.components.TvFocusable
 import com.me.ubox.ui.components.pageFocusGuard
-import com.me.ubox.ui.dialogs.ConfigImportDialog
 import com.me.ubox.ui.dialogs.DanmuApiDialog
 import com.me.ubox.ui.dialogs.DanmuFullSettingDialog
 import com.me.ubox.ui.dialogs.InfoDialog
@@ -116,7 +115,6 @@ fun SettingsScreen() {
     var busy by remember { mutableStateOf(false) }
     var engine by remember { mutableStateOf("") }
     var liveStatus by remember { mutableStateOf("") }
-    var showImport by remember { mutableStateOf(false) }
     var showHomeRecPicker by remember { mutableStateOf(false) }
     var showSiteFilter by remember { mutableStateOf(false) }
     val cacheOn by ConfigCache.enabled.collectAsStateWithLifecycle()
@@ -187,7 +185,7 @@ fun SettingsScreen() {
         val cfgUrl = ConfigStore.loadUrl()
         if (cfgUrl.isNotEmpty()) {
             val old = ConfigCache.peek(ConfigCache.KIND_TVBOX, cfgUrl)?.text
-            val (ok, msg) = ConfigStore.applyInput(cfgUrl, ConfigStore.loadLines())
+            val (ok, msg) = ConfigStore.applyInput(cfgUrl)
             allOk = allOk && ok
             parts.add("配置: ${msg.lineSequence().first()}")
             if (ok && old != null) {
@@ -283,17 +281,17 @@ fun SettingsScreen() {
         Spacer(Modifier.height(6.dp))
         Row {
             SettingsActionButton(
-                label = "更换配置",
+                label = "保存配置",
                 filled = true,
                 enabled = !busy,
                 onClick = { scope.launch { applyConfigInput(urlInput, false) } },
             )
         }
-        Spacer(Modifier.height(8.dp))
-        SettingsActionButton(
-            label = "导入 TVBox 配置 (URL / JSON)",
-            enabled = !busy,
-            onClick = { showImport = true },
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "仅支持单个线路的配置地址 (或配置 JSON), 不支持多线路组合链接; 留空保存 = 清除配置",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
         )
         if (status.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
@@ -615,19 +613,6 @@ fun SettingsScreen() {
         Spacer(Modifier.height(24.dp))
     }
 
-    if (showImport) {
-        ConfigImportDialog(
-            onImport = { input ->
-                // 空输入不做任何事 (对照 Flutter: if (input == null || input.isEmpty) return) —
-                // 不能落入 applyConfigInput 的空分支把配置清除掉.
-                if (input.isNotEmpty()) {
-                    urlInput = input
-                    scope.launch { applyConfigInput(input, false) }
-                }
-            },
-            onDismiss = { showImport = false },
-        )
-    }
     if (showSiteFilter) {
         SiteBlacklistSheet(
             sites = loaded?.sites?.filter { it.isRealSource } ?: emptyList(),

@@ -146,36 +146,10 @@ class Config(var url: String) {
                 url = current
                 return
             }
-            // 多线路集合: 自动切第一条, 同时保留列表供设置页切换.
+            // 多线路组合 ({"urls":[...]}) 不再支持: 只能导入单个线路的配置.
             val urlsRaw = map.optJSONArray("urls")
             if (urlsRaw != null && urlsRaw.length() > 0) {
-                val parsed = mutableListOf<ConfigLine>()
-                for (i in 0 until urlsRaw.length()) {
-                    when (val item = urlsRaw.get(i)) {
-                        is JSONObject -> {
-                            val name = (JsonUtil.optStringOrNull(item, "name") ?: "").trim()
-                            var u = (JsonUtil.optStringOrNull(item, "url") ?: "").trim()
-                            if (u.isEmpty()) u = (JsonUtil.optStringOrNull(item, "api") ?: "").trim()
-                            if (u.isNotEmpty()) {
-                                parsed.add(ConfigLine(if (name.isEmpty()) u else name, normalizeUrl(u)))
-                            }
-                        }
-                        is String -> {
-                            val t = item.trim()
-                            if (t.isNotEmpty()) parsed.add(ConfigLine(t, normalizeUrl(t)))
-                        }
-                    }
-                }
-                if (parsed.isEmpty()) throw ConfigException("配置解析失败: urls 线路集合为空")
-                lines = parsed
-                lineSource = current
-                current = parsed.first().url
-                body = fetchBody(current)
-                if (body == null) {
-                    body = EngineClient.getText(current).ifEmpty { null }
-                    engineTried.add(current)
-                }
-                continue
+                throw ConfigException("不支持多线路组合链接\n请导入单个线路的配置地址")
             }
             // 单线包装: {"url": "http://..."}
             val redirect = JsonUtil.optStringOrNull(map, "url") ?: ""
