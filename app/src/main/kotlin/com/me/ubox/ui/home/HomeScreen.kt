@@ -348,6 +348,8 @@ private fun BarChip(label: String, icon: androidx.compose.ui.graphics.vector.Ima
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = label,
+                // 站源名称固定白色: 平板/TV 外壳没有 Surface, 默认内容色会退化成黑色.
+                color = androidx.compose.ui.graphics.Color.White,
                 style = MaterialTheme.typography.bodyMedium.copy(
                     fontSize = (if (tv) 17 else 13).sp,
                     fontWeight = FontWeight.W600,
