@@ -72,12 +72,42 @@ class PlayerViewModel(
     private val _buffering = MutableStateFlow(false)
     val buffering: StateFlow<Boolean> = _buffering.asStateFlow()
 
-    /** TV 全屏: 控制层自动隐藏 / 遥控器快进快退提示. */
-    private val _tvOverlay = MutableStateFlow(true)
-    val tvOverlay: StateFlow<Boolean> = _tvOverlay.asStateFlow()
+    /** 已缓冲到的位置 (进度条第二层). */
+    private val _bufferedMs = MutableStateFlow(0L)
+    val bufferedMs: StateFlow<Long> = _bufferedMs.asStateFlow()
 
-    private val _seekHint = MutableStateFlow("")
-    val seekHint: StateFlow<String> = _seekHint.asStateFlow()
+    // ---- 按影片持久化的播放配置 (对照 NovaBox/NovaTV VodController 的 mPlayerConfig) ----
+    private val cfg0 = VodPlayConfigStore.load(siteKey, vodId)
+
+    private val _speed = MutableStateFlow(cfg0.speed)
+
+    /** 当前倍速 (菜单设置值; 长按 3x 是临时的, 不改它). */
+    val speed: StateFlow<Float> = _speed.asStateFlow()
+
+    private val _scaleType = MutableStateFlow(cfg0.scale)
+
+    /** 画面比例: 0 默认 / 1 16:9 / 2 4:3 / 3 填充 / 4 原始 / 5 裁剪. */
+    val scaleType: StateFlow<Int> = _scaleType.asStateFlow()
+
+    private val _skipStartSec = MutableStateFlow(cfg0.skipStartSec)
+    val skipStartSec: StateFlow<Int> = _skipStartSec.asStateFlow()
+
+    private val _skipEndSec = MutableStateFlow(cfg0.skipEndSec)
+    val skipEndSec: StateFlow<Int> = _skipEndSec.asStateFlow()
+
+    /** 长按 3x 加速中. */
+    private val _boosting = MutableStateFlow(false)
+    val boosting: StateFlow<Boolean> = _boosting.asStateFlow()
+
+    /** 视频像素尺寸 (画面比例「原始」用). */
+    private val _videoWidth = MutableStateFlow(0)
+    val videoWidth: StateFlow<Int> = _videoWidth.asStateFlow()
+    private val _videoHeight = MutableStateFlow(0)
+    val videoHeight: StateFlow<Int> = _videoHeight.asStateFlow()
+
+    /** 本集是否已应用过片头跳过 / 已触发过片尾跳过. */
+    private var startSkipApplied = false
+    private var endSkipFired = false
 
     /** 视频宽高比 (0 = 未知, 铺满). */
     private val _videoAspectRatio = MutableStateFlow(0f)
@@ -106,6 +136,7 @@ class PlayerViewModel(
     private var pollJob: kotlinx.coroutines.Job? = null
 
     init {
+        player.setPlaybackSpeed(cfg0.speed)
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _playing.value = isPlaying
@@ -118,9 +149,15 @@ class PlayerViewModel(
                 if (state == Player.STATE_READY) {
                     _durationMs.value = player.duration.coerceAtLeast(0L)
                     if (pendingSeekMs >= 0) {
+                        // 有续播进度时以续播为准, 不再叠加片头跳过.
                         player.seekTo(pendingSeekMs)
                         pendingSeekMs = -1
                         restoreDone = true
+                        startSkipApplied = true
+                    } else if (!startSkipApplied) {
+                        startSkipApplied = true
+                        val st = _skipStartSec.value
+                        if (st > 0) player.seekTo(st * 1000L)
                     }
                 }
             }
@@ -150,6 +187,8 @@ class PlayerViewModel(
 
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                 if (videoSize.width > 0 && videoSize.height > 0) {
+                    _videoWidth.value = videoSize.width
+                    _videoHeight.value = videoSize.height
                     _videoAspectRatio.value =
                         videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio / videoSize.height
                 }
@@ -169,7 +208,10 @@ class PlayerViewModel(
                 delay(200)
                 val pos = player.currentPosition
                 _positionMs.value = pos
-                _durationMs.value = player.duration.coerceAtLeast(0L)
+                val dur = player.duration.coerceAtLeast(0L)
+                _durationMs.value = dur
+                _bufferedMs.value = player.bufferedPosition.coerceAtLeast(0L)
+                checkSkipEnd(pos, dur)
                 // 弹幕大师自带时间轴: 仅在 seek 跳变/首次就绪时对齐 (见 DanmakuManager).
                 DanmakuManager.syncPosition(pos, player.isPlaying)
                 maybeSaveProgress(pos)
@@ -213,6 +255,8 @@ class PlayerViewModel(
         _error.value = ""
         restorePos = 0
         restoreDone = false
+        startSkipApplied = false
+        endSkipFired = false
         danmakuSearched = false
         // 换集: 重置弹幕 (对照原版 PlayActivity.resetDanmuState → DanmuLoadController.reset):
         // 取消上一集在途的搜索/加载并清空画面. 只 clear 不 reset 的话, 上一集的搜索结果
@@ -309,6 +353,11 @@ class PlayerViewModel(
         viewModelScope.launch { openIndex(_idx.value + 1) }
     }
 
+    fun playPrev() {
+        if (_idx.value <= 0) return
+        viewModelScope.launch { openIndex(_idx.value - 1) }
+    }
+
     /** 重试当前集: 重新解析加载 (对照 Flutter 版重试按钮 _openIndex(_idx, resume: false)). */
     fun retry() {
         viewModelScope.launch { openIndex(_idx.value, resume = false) }
@@ -332,32 +381,82 @@ class PlayerViewModel(
         if (target < 0) target = 0
         if (dur > 0 && target > dur) target = dur
         player.seekTo(target)
-        _seekHint.value = "${if (seconds > 0) "⏩" else "⏪"} ${fmt(target)} / ${fmt(dur)}"
-        viewModelScope.launch {
-            delay(1200)
-            _seekHint.value = ""
-        }
+        _positionMs.value = target
     }
+
+    /** 当前播放位置 / 总时长 (界面层做手势/遥控器累计快进时读取, 不依赖 200ms 轮询). */
+    val positionNow: Long get() = player.currentPosition.coerceAtLeast(0L)
+    val durationNow: Long get() = player.duration.coerceAtLeast(0L)
 
     fun seekTo(ms: Long) {
         player.seekTo(ms)
+        _positionMs.value = ms
     }
 
-    /** TV 控制层显隐: 每次唤出都重置定时器 (对照 Flutter _showTvOverlay 的 timer.cancel). */
-    private var tvOverlayJob: kotlinx.coroutines.Job? = null
+    // ---------------------------------------------------------------- 倍速 / 画面 / 片头片尾
 
-    fun showTvOverlay() {
-        _tvOverlay.value = true
-        tvOverlayJob?.cancel()
-        tvOverlayJob = viewModelScope.launch {
-            delay(8000)
-            _tvOverlay.value = false
+    private fun persistConfig() {
+        VodPlayConfigStore.save(
+            siteKey,
+            vodId,
+            VodPlayConfig(_speed.value, _scaleType.value, _skipStartSec.value, _skipEndSec.value),
+        )
+    }
+
+    fun setSpeed(v: Float) {
+        _speed.value = v
+        if (!_boosting.value) player.setPlaybackSpeed(v)
+        persistConfig()
+    }
+
+    fun setScale(type: Int) {
+        _scaleType.value = type.coerceIn(0, PlayerOptions.SCALE_NAMES.size - 1)
+        persistConfig()
+    }
+
+    /** 把当前位置记为片头结束点 (对照 NovaTV play_time_start: st = 当前秒). */
+    fun markSkipStart() {
+        _skipStartSec.value = (player.currentPosition / 1000L).toInt().coerceAtLeast(0)
+        persistConfig()
+    }
+
+    /** 把当前位置到结尾的时长记为片尾 (对照 NovaTV play_time_end: et = 总时长 - 当前). */
+    fun markSkipEnd() {
+        val dur = player.duration.coerceAtLeast(0L)
+        if (dur <= 0) return
+        _skipEndSec.value = ((dur - player.currentPosition) / 1000L).toInt().coerceAtLeast(0)
+        persistConfig()
+    }
+
+    fun clearSkip() {
+        _skipStartSec.value = 0
+        _skipEndSec.value = 0
+        persistConfig()
+    }
+
+    /** 片尾自动跳下一集 (对照 VodController.setProgress 的 et 逻辑). */
+    private fun checkSkipEnd(pos: Long, dur: Long) {
+        val et = _skipEndSec.value
+        if (et <= 0 || endSkipFired || dur <= et * 1000L || pos <= 0) return
+        if (_idx.value + 1 >= epUrls.size) return
+        if (pos + et * 1000L >= dur) {
+            endSkipFired = true
+            AppSnackbar.show("已跳过片尾")
+            playNext()
         }
     }
 
-    fun hideTvOverlay() {
-        tvOverlayJob?.cancel()
-        _tvOverlay.value = false
+    /** 长按加速 (对照 VodController.speedPlayStart/End: 按住 3x, 松开恢复). */
+    fun boostStart() {
+        if (_boosting.value || !player.isPlaying) return
+        _boosting.value = true
+        player.setPlaybackSpeed(PlayerOptions.BOOST_SPEED)
+    }
+
+    fun boostEnd() {
+        if (!_boosting.value) return
+        _boosting.value = false
+        player.setPlaybackSpeed(_speed.value)
     }
 
     /** 弹幕开关 (对照 NovaTV toggleDanmu: 开启时需要重新触发加载). */

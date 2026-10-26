@@ -20,6 +20,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -636,6 +639,9 @@ fun LiveListItem(
 fun VideoSurfaceView(
     modifier: Modifier = Modifier,
     aspectRatio: Float? = null,
+    scaleType: Int = 0,
+    videoWidthPx: Int = 0,
+    videoHeightPx: Int = 0,
     onSurfaceReady: (android.view.SurfaceView) -> Unit,
     onSurfaceDispose: () -> Unit,
 ) {
@@ -657,17 +663,45 @@ fun VideoSurfaceView(
             onSurfaceDispose()
         }
     }
-    // 按视频真实比例"适应"容器 (contain): 容器比视频宽 → 左右留黑边, 比视频窄 → 上下留黑边.
-    // 原先 fillMaxWidth().aspectRatio() 只按宽度算高度, 容器较矮时 (手机横屏全屏) 会超出屏幕被裁掉.
-    // SurfaceView 里视频会被拉伸铺满 Surface, 所以必须由 View 本身的尺寸保持比例.
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        AndroidView(
-            factory = { surfaceView },
-            modifier = if (aspectRatio != null && aspectRatio > 0f) {
-                Modifier.aspectRatio(aspectRatio)
+    // 画面比例 (对照 NovaBox/NovaTV 的 SCREEN_SCALE_*): SurfaceView 里视频会被拉伸铺满 Surface,
+    // 所以比例必须由 View 本身的尺寸决定.
+    //   0 默认 = 按视频真实比例适应 (letterbox);  1 = 16:9 适应;  2 = 4:3 适应;
+    //   3 填充 = 拉伸铺满容器;  4 原始 = 视频像素尺寸 (不放大, 超出容器时适应);
+    //   5 裁剪 = 按视频比例铺满容器并裁掉溢出部分.
+    BoxWithConstraints(
+        modifier = modifier.clipToBounds(),
+        contentAlignment = Alignment.Center,
+    ) {
+        val cw = maxWidth
+        val ch = maxHeight
+        val natural = if (aspectRatio != null && aspectRatio > 0f) aspectRatio else 0f
+        val density = androidx.compose.ui.platform.LocalDensity.current
+
+        // 适应 (contain): 容器比目标宽 -> 以高为准, 否则以宽为准.
+        fun contain(ratio: Float): Modifier =
+            if (cw / ch > ratio) Modifier.size(ch * ratio, ch) else Modifier.size(cw, cw / ratio)
+
+        // 铺满 (cover): 与 contain 相反, 超出部分由 clipToBounds 裁掉.
+        fun cover(ratio: Float): Modifier =
+            if (cw / ch > ratio) Modifier.requiredSize(cw, cw / ratio) else Modifier.requiredSize(ch * ratio, ch)
+
+        val surfaceModifier: Modifier = when (scaleType) {
+            1 -> contain(16f / 9f)
+            2 -> contain(4f / 3f)
+            3 -> Modifier.fillMaxSize()
+            4 -> if (videoWidthPx > 0 && videoHeightPx > 0 && natural > 0f) {
+                val w = with(density) { (natural * videoHeightPx).toDp() }
+                val h = with(density) { videoHeightPx.toDp() }
+                if (w <= cw && h <= ch) Modifier.size(w, h) else contain(natural)
             } else {
                 Modifier.fillMaxSize()
-            },
+            }
+            5 -> if (natural > 0f) cover(natural) else Modifier.fillMaxSize()
+            else -> if (natural > 0f) contain(natural) else Modifier.fillMaxSize()
+        }
+        AndroidView(
+            factory = { surfaceView },
+            modifier = surfaceModifier,
         )
     }
 }
