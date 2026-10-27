@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
@@ -213,8 +214,15 @@ fun SettingsScreen() {
 
     // 真 TV 无左侧栏: 设置页顶部提供"返回首页"入口 (平板走左侧栏, 手机走底部导航).
     // 每次切到设置页都把焦点落到该按钮 (KeepAliveStack 的隐藏页不抢焦点).
+    //
+    // 布局要点: 返回按钮与滚动内容必须是"上下排列"的两块 (外层 Column), 不能是 KeepAliveStack
+    // 的 Box 里互相叠放的兄弟节点 —— 叠放时返回按钮的矩形与表单第一项重叠, 方向键焦点搜索
+    // (beam search) 找不到"正下方"的候选, 焦点就卡在返回按钮上.
+    // 另外显式连线: 返回按钮 ↓ = 第一个输入框, 输入框 ↑ = 返回按钮, 不依赖几何搜索.
+    val backRequester = remember { FocusRequester() }
+    val firstItemRequester = remember { FocusRequester() }
+    Column(modifier = Modifier.fillMaxSize()) {
     if (remoteMode) {
-        val backRequester = remember { FocusRequester() }
         val shellTab by AppShell.tabIndex.collectAsStateWithLifecycle()
         LaunchedEffect(shellTab) {
             if (shellTab == AppShell.SETTINGS_TAB) {
@@ -238,14 +246,16 @@ fun SettingsScreen() {
             autofocus = true,
             onTap = { AppShell.selectTab(AppShell.HOME_TAB) },
             modifier = Modifier
+                .padding(start = 12.dp, top = 12.dp, bottom = 8.dp)
                 .focusRequester(backRequester)
-                .padding(bottom = 8.dp),
+                .focusProperties { down = firstItemRequester },
         )
     }
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
+            .weight(1f)
             .verticalScroll(rememberScrollState())
             .padding(all = 12.dp),
     ) {
@@ -276,7 +286,11 @@ fun SettingsScreen() {
             keyboardActions = KeyboardActions(onDone = {
                 scope.launch { applyConfigInput(urlInput, false) }
             }),
-            modifier = Modifier.fillMaxWidth().pageFocusGuard(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .pageFocusGuard()
+                .focusRequester(firstItemRequester)
+                .focusProperties { up = backRequester },
         )
         Spacer(Modifier.height(6.dp))
         Row {
@@ -611,6 +625,7 @@ fun SettingsScreen() {
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(24.dp))
+    }
     }
 
     if (showSiteFilter) {
