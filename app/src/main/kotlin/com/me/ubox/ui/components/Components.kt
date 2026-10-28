@@ -567,6 +567,7 @@ fun LiveListItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     large: Boolean = false,
+    autofocus: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
     // 焦点 = #1890FF 实底 (黑字); 选中 = #331890FF 底 + #1890FF 1dp 描边 (#1890FF 字);
@@ -585,6 +586,7 @@ fun LiveListItem(
     TvFocusable(
         onTap = onClick,
         modifier = modifier,
+        autofocus = autofocus,
         radius = 6.dp,
         focusScale = 1.0f, // 原版焦点无缩放
         showBorder = false, // 自绘焦点底色

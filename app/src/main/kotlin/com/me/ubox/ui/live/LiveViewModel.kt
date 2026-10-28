@@ -83,19 +83,26 @@ class LiveViewModel : ViewModel() {
     private val _videoMounted = MutableStateFlow(false)
     val videoMounted: StateFlow<Boolean> = _videoMounted.asStateFlow()
 
-    // ---- 手机控制浮层 / 竖屏全屏 ----
+    // ---- 手机/平板控制浮层 (对照 NovaBox live_control_overlay) ----
     private val _overlayVisible = MutableStateFlow(false)
     val overlayVisible: StateFlow<Boolean> = _overlayVisible.asStateFlow()
 
-    private val _portraitFullscreen = MutableStateFlow(false)
-    val portraitFullscreen: StateFlow<Boolean> = _portraitFullscreen.asStateFlow()
+    /** 手机/平板全屏: 视频铺满 + 隐藏信息栏与频道列表 (对照 NovaBox enterFullscreenMode). */
+    private val _fullscreen = MutableStateFlow(false)
+    val fullscreen: StateFlow<Boolean> = _fullscreen.asStateFlow()
 
-    // ---- TV 全屏 ----
-    private val _tvFullscreen = MutableStateFlow(false)
-    val tvFullscreen: StateFlow<Boolean> = _tvFullscreen.asStateFlow()
-
+    /** TV (遥控器) 频道面板是否显示 (对照 NovaTV ChannelListView). */
     private val _tvPanel = MutableStateFlow(false)
     val tvPanel: StateFlow<Boolean> = _tvPanel.asStateFlow()
+
+    // ---- 画面比例: 不做设置菜单, TV 由 MENU 键循环 (0 默认/1 16:9/2 4:3/3 填充/4 原始/5 裁剪) ----
+    private val _scaleType = MutableStateFlow(0)
+    val scaleType: StateFlow<Int> = _scaleType.asStateFlow()
+
+    fun cycleScale(): Int {
+        _scaleType.value = (_scaleType.value + 1) % com.me.ubox.ui.player.PlayerOptions.SCALE_NAMES.size
+        return _scaleType.value
+    }
 
     // ---- 右上角频道名角标 ----
     private val _badgeVisible = MutableStateFlow(false)
@@ -347,7 +354,7 @@ class LiveViewModel : ViewModel() {
     fun clickLiveChannel(position: Int) {
         // 对照 clickLiveChannel: 取当前选中分组的第 position 个频道
         playChannel(_selectedGroupIndex.value, position)
-        if (_tvFullscreen.value) hideTvPanel() // TV 全屏: 选台后收起面板, 回到纯画面
+        hideTvPanel() // 选台后收起频道面板, 回到纯画面
     }
 
     // ================= 自动换源 (对照 mConnectTimeoutChangeSourceRun) =================
@@ -507,24 +514,21 @@ class LiveViewModel : ViewModel() {
     }
 
     fun enterFullscreen() {
-        if (_portraitFullscreen.value) return
-        _portraitFullscreen.value = true
+        if (_fullscreen.value) return
+        _fullscreen.value = true
+        _overlayVisible.value = false
         com.me.ubox.ui.AppShell.setLiveFullscreen(true)
-        viewModelScope.launch {
-            delay(kOverlaySeconds * 1000)
-            if (_overlayVisible.value) _overlayVisible.value = false
-        }
     }
 
     fun exitFullscreen() {
-        if (!_portraitFullscreen.value) return
-        _portraitFullscreen.value = false
+        if (!_fullscreen.value) return
+        _fullscreen.value = false
         _overlayVisible.value = false
         com.me.ubox.ui.AppShell.setLiveFullscreen(false)
     }
 
     fun toggleFullscreen() {
-        if (_portraitFullscreen.value) exitFullscreen() else enterFullscreen()
+        if (_fullscreen.value) exitFullscreen() else enterFullscreen()
     }
 
     // ================= 切 Tab (对照 onFragmentPause) =================
@@ -534,9 +538,8 @@ class LiveViewModel : ViewModel() {
         cancelTimers()
         needManualPlay = true
         player.stop()
-        if (_portraitFullscreen.value || _tvFullscreen.value) {
-            _portraitFullscreen.value = false
-            _tvFullscreen.value = false
+        if (_fullscreen.value) {
+            _fullscreen.value = false
             _tvPanel.value = false
             com.me.ubox.ui.AppShell.setLiveFullscreen(false)
         }
@@ -545,22 +548,7 @@ class LiveViewModel : ViewModel() {
         _overlayVisible.value = false
     }
 
-    // ================= TV 全屏 =================
-
-    fun enterTvFullscreen() {
-        if (_tvFullscreen.value) return
-        _tvFullscreen.value = true
-        _tvPanel.value = false
-        // 通知外壳 (MainShell) 收起 TV 左侧导航与标题栏.
-        com.me.ubox.ui.AppShell.setLiveFullscreen(true)
-    }
-
-    fun exitTvFullscreen() {
-        if (!_tvFullscreen.value) return
-        _tvFullscreen.value = false
-        _tvPanel.value = false
-        com.me.ubox.ui.AppShell.setLiveFullscreen(false)
-    }
+    // ================= TV (遥控器) 频道面板 =================
 
     fun showTvPanel() {
         if (_tvPanel.value) return

@@ -1,33 +1,39 @@
 package com.me.ubox.ui.live
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import android.view.KeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.focusable
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,43 +50,54 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.drop
 import com.me.ubox.TvMode
+import com.me.ubox.data.live.LiveChannelGroup
+import com.me.ubox.data.live.LiveChannelItem
 import com.me.ubox.ui.AppShell
+import com.me.ubox.ui.AppSnackbar
 import com.me.ubox.ui.components.Badge
 import com.me.ubox.ui.components.ImmersiveSystemBarsEffect
 import com.me.ubox.ui.components.LiveListItem
-import com.me.ubox.ui.components.TvButton
 import com.me.ubox.ui.components.VideoSurfaceView
 import com.me.ubox.ui.components.pageFocusGuard
+import com.me.ubox.ui.player.PlayerOptions
 import com.me.ubox.ui.theme.LiveColors
 
 /**
- * 直播页 (对照 Flutter 版 live_page.dart / 原版 LiveFragment):
- * 手机 = 播放器(2) + 信息栏(52dp) + 三列列表(3); TV = 播放器(72%) + 右侧面板(28%).
+ * 直播页: 三套布局, 分别对照参考实现
+ *   - TV (遥控器) = NovaTV LivePlayActivity: 视频铺满, 确定键呼出右侧频道面板,
+ *                   上下键换台, 左右键换线路, MENU 键循环画面比例 (不做设置菜单);
+ *   - 平板 (触摸) = NovaBox layout-sw600dp: 左 72% 播放器 | 右 28% 面板 (52dp 信息栏 + 三列列表);
+ *   - 手机 (触摸) = NovaBox layout: 播放器 weight 2 + 52dp 信息栏 + 三列列表 weight 3.
+ *
+ * 三端共用: 分组 / 频道 / 线路 三列, 频道名角标, 分组密码, 自动换源.
  */
 @Composable
 fun LiveScreen(
     onGoSettings: () -> Unit,
     vm: LiveViewModel = viewModel(),
 ) {
-    // tv = TV 布局 (TV 与平板共用); remote = 真遥控器 (平板为 false, 额外提供触摸手势).
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
     val remote by TvMode.isRemote.collectAsStateWithLifecycle()
     val groups by vm.groups.collectAsStateWithLifecycle()
@@ -90,94 +107,106 @@ fun LiveScreen(
     val selectedGroupIndex by vm.selectedGroupIndex.collectAsStateWithLifecycle()
     val selectedChannelIndex by vm.selectedChannelIndex.collectAsStateWithLifecycle()
     val currentChannel by vm.currentChannel.collectAsStateWithLifecycle()
-    val playing by vm.playing.collectAsStateWithLifecycle()
-    val buffering by vm.buffering.collectAsStateWithLifecycle()
     val videoMounted by vm.videoMounted.collectAsStateWithLifecycle()
-    val overlayVisible by vm.overlayVisible.collectAsStateWithLifecycle()
-    val portraitFullscreen by vm.portraitFullscreen.collectAsStateWithLifecycle()
-    val tvFullscreen by vm.tvFullscreen.collectAsStateWithLifecycle()
     val tvPanel by vm.tvPanel.collectAsStateWithLifecycle()
+    val fullscreen by vm.fullscreen.collectAsStateWithLifecycle()
     val badgeVisible by vm.badgeVisible.collectAsStateWithLifecycle()
     val badgeName by vm.badgeName.collectAsStateWithLifecycle()
     val videoAspectRatio by vm.videoAspectRatio.collectAsStateWithLifecycle()
+    val scaleType by vm.scaleType.collectAsStateWithLifecycle()
 
     var showPasswordDialog by remember { mutableStateOf<Int?>(null) }
 
     LaunchedEffect(Unit) { vm.bootstrap() }
 
-    // 直播源地址变化 → 重载 (跳过初始发射, 首帧加载由 vm.bootstrap 负责)
+    // 直播源地址变化 / 设置页"更新缓存" → 重载
     LaunchedEffect(Unit) {
         com.me.ubox.data.live.LiveStore.liveUrlChanged.drop(1).collect { vm.onLiveUrlChanged() }
     }
-    // 设置页"更新缓存"拉到新直播内容 → 重载 (此时读到的是刚更新的缓存).
     LaunchedEffect(Unit) {
         com.me.ubox.data.live.LiveStore.reloadTick.drop(1).collect { vm.onLiveUrlChanged() }
     }
 
-    // 直播页已是独立路由: 退出页面 = 组合销毁 + per-route VM 清空 (onCleared 释放播放器),
-    // 不再需要按页签切换停播.
-
-    // 沉浸式系统栏 (对照 Flutter live_page 的 6 处 SystemChrome 调用):
-    // 全屏 (竖屏全屏/TV 全屏) = immersiveSticky; 退出全屏/切 Tab 复位 (liveFullscreen=false)/
-    // 页面销毁 = edgeToEdge.
-    val fullscreen by AppShell.liveFullscreen.collectAsStateWithLifecycle()
-    ImmersiveSystemBarsEffect(immersive = fullscreen)
-    // 离开组合时复位全屏标记 (对照 Flutter dispose: RootPage.liveFullscreen.value = false).
-    DisposableEffect(Unit) {
+    // 沉浸式系统栏: TV 恒全屏; 手机/平板仅全屏时沉浸式.
+    ImmersiveSystemBarsEffect(immersive = remote || fullscreen)
+    // TV 端直播页整页铺满 (对照 NovaTV LivePlayActivity 的 Activity 全屏).
+    DisposableEffect(remote) {
+        if (remote) AppShell.setLiveFullscreen(true)
         onDispose { AppShell.setLiveFullscreen(false) }
     }
 
-    if (tv) {
-        if (tvFullscreen) {
-            BackHandler {
-                if (tvPanel) vm.hideTvPanel() else vm.exitTvFullscreen()
-            }
+    // 屏幕方向: 平板恒横屏; 手机进全屏转横屏, 退出复位 (对照 NovaBox OrientationHelper).
+    val context = LocalContext.current
+    LaunchedEffect(fullscreen, tv) {
+        val act = context.findLiveActivity() ?: return@LaunchedEffect
+        act.requestedOrientation = when {
+            tv -> TvMode.baseOrientation()
+            fullscreen -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else -> TvMode.baseOrientation()
         }
-        TvLiveLayout(
+    }
+    DisposableEffect(Unit) {
+        onDispose { context.findLiveActivity()?.requestedOrientation = TvMode.baseOrientation() }
+    }
+
+    // 面板 / 全屏打开时返回键先收起.
+    if (remote) {
+        BackHandler(enabled = tvPanel) { vm.hideTvPanel() }
+    } else {
+        BackHandler(enabled = fullscreen) { vm.exitFullscreen() }
+    }
+
+    when {
+        remote -> TvLiveLayout(
             vm = vm,
             groups = groups,
             selectedGroupIndex = selectedGroupIndex,
             selectedChannelIndex = selectedChannelIndex,
             currentChannel = currentChannel,
-            playing = playing,
-            buffering = buffering,
             videoMounted = videoMounted,
             tvPanel = tvPanel,
             badgeVisible = badgeVisible,
             badgeName = badgeName,
             videoAspectRatio = videoAspectRatio,
-            touch = !remote,
+            scaleType = scaleType,
             onPasswordNeeded = { showPasswordDialog = it },
         )
-    } else {
-        if (portraitFullscreen) {
-            BackHandler { vm.exitFullscreen() }
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-                PlayerArea(vm = vm, tv = false, fullscreen = true, videoAspectRatio = videoAspectRatio)
-            }
-        } else {
-            Column(modifier = Modifier.fillMaxSize()) {
-                Box(modifier = Modifier.fillMaxWidth().weight(2f)) {
-                    PlayerArea(vm = vm, tv = false, fullscreen = false, videoAspectRatio = videoAspectRatio)
-                }
-                InfoBar(vm = vm, tv = false)
-                Box(modifier = Modifier.weight(3f)) {
-                    LiveBodyArea(
-                        vm = vm,
-                        tv = false,
-                        groups = groups,
-                        loading = loading,
-                        noSource = noSource,
-                        error = error,
-                        selectedGroupIndex = selectedGroupIndex,
-                        selectedChannelIndex = selectedChannelIndex,
-                        currentChannel = currentChannel,
-                        onGoSettings = onGoSettings,
-                        onPasswordNeeded = { showPasswordDialog = it },
-                    )
-                }
-            }
-        }
+
+        tv -> TabletLiveLayout(
+            vm = vm,
+            groups = groups,
+            loading = loading,
+            noSource = noSource,
+            error = error,
+            selectedGroupIndex = selectedGroupIndex,
+            selectedChannelIndex = selectedChannelIndex,
+            currentChannel = currentChannel,
+            videoMounted = videoMounted,
+            fullscreen = fullscreen,
+            badgeVisible = badgeVisible,
+            badgeName = badgeName,
+            videoAspectRatio = videoAspectRatio,
+            scaleType = scaleType,
+            onPasswordNeeded = { showPasswordDialog = it },
+        )
+
+        else -> PhoneLiveLayout(
+            vm = vm,
+            groups = groups,
+            loading = loading,
+            noSource = noSource,
+            error = error,
+            selectedGroupIndex = selectedGroupIndex,
+            selectedChannelIndex = selectedChannelIndex,
+            currentChannel = currentChannel,
+            videoMounted = videoMounted,
+            fullscreen = fullscreen,
+            badgeVisible = badgeVisible,
+            badgeName = badgeName,
+            videoAspectRatio = videoAspectRatio,
+            scaleType = scaleType,
+            onPasswordNeeded = { showPasswordDialog = it },
+        )
     }
 
     val passwordGroup = showPasswordDialog
@@ -201,7 +230,7 @@ fun LiveScreen(
                 TextButton(onClick = {
                     val ok = vm.confirmPassword(passwordGroup, pwd)
                     showPasswordDialog = null
-                    if (!ok) com.me.ubox.ui.AppSnackbar.show("密码错误")
+                    if (!ok) AppSnackbar.show("密码错误")
                 }) { Text("确定") }
             },
             dismissButton = {
@@ -211,80 +240,64 @@ fun LiveScreen(
     }
 }
 
-// ---------------------------------------------------------------- 播放器区域
+private tailrec fun Context.findLiveActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findLiveActivity()
+    else -> null
+}
 
+// ---------------------------------------------------------------- 视频区 (三端共用)
+
+/**
+ * 视频表面 + 缓冲转圈 + 右上角频道名角标 (切台后短暂显示).
+ * [scaleType] 决定画面比例; 未设置比例时按视频真实比例适应.
+ */
 @Composable
-private fun PlayerArea(
+private fun LiveVideo(
     vm: LiveViewModel,
-    tv: Boolean,
-    fullscreen: Boolean,
+    videoMounted: Boolean,
     videoAspectRatio: Float,
+    scaleType: Int,
+    badgeVisible: Boolean,
+    badgeName: String,
+    tv: Boolean,
+    modifier: Modifier = Modifier,
 ) {
-    val playing by vm.playing.collectAsStateWithLifecycle()
     val buffering by vm.buffering.collectAsStateWithLifecycle()
-    val videoMounted by vm.videoMounted.collectAsStateWithLifecycle()
-    val overlayVisible by vm.overlayVisible.collectAsStateWithLifecycle()
-    val badgeVisible by vm.badgeVisible.collectAsStateWithLifecycle()
-    val badgeName by vm.badgeName.collectAsStateWithLifecycle()
-    val portraitFullscreen by vm.portraitFullscreen.collectAsStateWithLifecycle()
+    val playing by vm.playing.collectAsStateWithLifecycle()
+    val noSource by vm.noSource.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
+    val groups by vm.groups.collectAsStateWithLifecycle()
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = modifier.background(Color.Black)) {
         if (videoMounted) {
             VideoSurfaceView(
                 modifier = Modifier.fillMaxSize(),
                 aspectRatio = if (videoAspectRatio > 0f) videoAspectRatio else null,
+                scaleType = scaleType,
                 onSurfaceReady = { view -> vm.attachSurface(view.holder.surface) },
                 onSurfaceDispose = { vm.detachSurface() },
             )
         } else {
-            // 占位: 未配置直播源 / 错误 / 空白
-            val noSource by vm.noSource.collectAsStateWithLifecycle()
-            val error by vm.error.collectAsStateWithLifecycle()
-            val groups by vm.groups.collectAsStateWithLifecycle()
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 when {
-                    noSource -> NoSourceHint(onGoSettings = {
-                        AppShell.selectTab(AppShell.SETTINGS_TAB)
-                    })
-                    error.isNotEmpty() && groups.isEmpty() -> LiveErrorHint(error = error, onRetry = vm::loadLives)
+                    noSource -> NoSourceHint(onGoSettings = { AppShell.selectTab(AppShell.SETTINGS_TAB) })
+                    error.isNotEmpty() && groups.isEmpty() ->
+                        LiveErrorHint(error = error, onRetry = vm::loadLives)
                     else -> Spacer(Modifier)
                 }
             }
         }
         if (buffering && !playing) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(strokeWidth = 2.dp, color = Color.White)
-            }
+            CircularProgressIndicator(
+                strokeWidth = 3.dp,
+                color = Color.White,
+                modifier = Modifier.align(Alignment.Center).size(if (tv) 50.dp else 36.dp),
+            )
         }
         if (badgeVisible) {
-            Box(modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)) {
-                Badge(
-                    text = badgeName,
-                    bg = LiveColors.BadgeBg,
-                    tv = tv,
-                )
-            }
-        }
-        // TV 全屏时不常驻控制条 (用遥控器按键直接操作); 非全屏才显示.
-        when {
-            tv && !fullscreen -> Box(modifier = Modifier.align(Alignment.BottomCenter)) {
-                TvControlBar(vm = vm, playing = playing)
-            }
-            !tv -> {
-                // 手机: 点击视频区域唤出控制浮层 (对照原版 LiveController 的点击手势).
-                if (!overlayVisible) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clickable { vm.toggleOverlay() },
-                    )
-                }
-                PhoneOverlay(
-                    visible = overlayVisible,
-                    playing = playing,
-                    portraitFullscreen = portraitFullscreen,
-                    vm = vm,
-                )
+            Box(modifier = Modifier.align(Alignment.TopEnd).padding(if (tv) 10.dp else 6.dp)) {
+                Badge(text = badgeName, bg = LiveColors.BadgeBg, tv = tv)
             }
         }
     }
@@ -296,7 +309,7 @@ private fun NoSourceHint(onGoSettings: () -> Unit) {
         Icon(
             imageVector = Icons.Filled.PlayArrow,
             contentDescription = null,
-            modifier = Modifier.height(48.dp).width(48.dp),
+            modifier = Modifier.size(48.dp),
             tint = Color.White.copy(alpha = 0.38f),
         )
         Spacer(Modifier.height(12.dp))
@@ -320,7 +333,7 @@ private fun LiveErrorHint(error: String, onRetry: () -> Unit) {
     ) {
         Text(
             text = error.ifEmpty { "直播列表为空" },
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            textAlign = TextAlign.Center,
             color = Color.White.copy(alpha = 0.7f),
         )
         Spacer(Modifier.height(16.dp))
@@ -328,8 +341,9 @@ private fun LiveErrorHint(error: String, onRetry: () -> Unit) {
     }
 }
 
+/** 播放器下方 52dp 信息栏: 频道名 (bold) —— 对照 NovaBox live_info_bar. */
 @Composable
-private fun InfoBar(vm: LiveViewModel, tv: Boolean) {
+private fun LiveInfoBar(vm: LiveViewModel, tablet: Boolean) {
     val currentChannel by vm.currentChannel.collectAsStateWithLifecycle()
     val noSource by vm.noSource.collectAsStateWithLifecycle()
     val text = when {
@@ -340,31 +354,37 @@ private fun InfoBar(vm: LiveViewModel, tv: Boolean) {
         modifier = Modifier
             .fillMaxWidth()
             .height(52.dp)
-            .padding(start = if (tv) 14.dp else 16.dp, end = 8.dp),
+            .padding(start = if (tablet) 14.dp else 16.dp, end = 8.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(
             text = text,
             maxLines = 1,
-            style = MaterialTheme.typography.titleSmall,
+            overflow = TextOverflow.Ellipsis,
+            fontWeight = FontWeight.Bold,
+            fontSize = if (tablet) 16.sp else 18.sp,
         )
     }
 }
 
 // ---------------------------------------------------------------- 三列列表
 
+/**
+ * 分组 / 频道 / 线路 三列 (对照 NovaBox live_channel_area).
+ * 权重: 手机 1 : 1.5 : 1, 平板 0.5 : 0.8 : 0.5.
+ */
 @Composable
-private fun LiveBodyArea(
+private fun LiveChannelArea(
     vm: LiveViewModel,
-    tv: Boolean,
-    groups: List<com.me.ubox.data.live.LiveChannelGroup>,
+    groups: List<LiveChannelGroup>,
     loading: Boolean,
     noSource: Boolean,
     error: String,
     selectedGroupIndex: Int,
     selectedChannelIndex: Int,
-    currentChannel: com.me.ubox.data.live.LiveChannelItem?,
-    onGoSettings: () -> Unit,
+    currentChannel: LiveChannelItem?,
+    large: Boolean,
+    weights: List<Float>,
     onPasswordNeeded: (Int) -> Unit,
 ) {
     if (noSource) return
@@ -379,15 +399,20 @@ private fun LiveBodyArea(
         return
     }
     Row(modifier = Modifier.fillMaxSize()) {
-        // 原版权重: 手机 1 : 1.5 : 1, TV(sw600dp) 0.5 : 0.8 : 0.5
-        Box(modifier = Modifier.weight(if (tv) 0.5f else 1f)) {
-            GroupList(vm = vm, groups = groups, selectedGroupIndex = selectedGroupIndex, tv = tv, onPasswordNeeded = onPasswordNeeded)
+        Box(modifier = Modifier.weight(weights[0]).fillMaxHeight()) {
+            GroupList(
+                vm = vm,
+                groups = groups,
+                selectedGroupIndex = selectedGroupIndex,
+                large = large,
+                onPasswordNeeded = onPasswordNeeded,
+            )
         }
-        Box(modifier = Modifier.weight(if (tv) 0.8f else 1.5f)) {
-            ChannelList(vm = vm, tv = tv, selectedChannelIndex = selectedChannelIndex)
+        Box(modifier = Modifier.weight(weights[1]).fillMaxHeight()) {
+            ChannelList(vm = vm, large = large, selectedChannelIndex = selectedChannelIndex)
         }
-        Box(modifier = Modifier.weight(if (tv) 0.5f else 1f)) {
-            SourceList(vm = vm, tv = tv, currentChannel = currentChannel)
+        Box(modifier = Modifier.weight(weights[2]).fillMaxHeight()) {
+            SourceList(vm = vm, large = large, currentChannel = currentChannel)
         }
     }
 }
@@ -395,17 +420,17 @@ private fun LiveBodyArea(
 @Composable
 private fun GroupList(
     vm: LiveViewModel,
-    groups: List<com.me.ubox.data.live.LiveChannelGroup>,
+    groups: List<LiveChannelGroup>,
     selectedGroupIndex: Int,
-    tv: Boolean,
+    large: Boolean,
     onPasswordNeeded: (Int) -> Unit,
 ) {
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp)) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
         items(groups, key = { it.groupIndex }) { g ->
             LiveListItem(
                 text = g.groupName,
                 selected = g.groupIndex == selectedGroupIndex,
-                large = tv,
+                large = large,
                 onClick = {
                     if (vm.needPassword(g.groupIndex)) {
                         onPasswordNeeded(g.groupIndex)
@@ -421,18 +446,20 @@ private fun GroupList(
 @Composable
 private fun ChannelList(
     vm: LiveViewModel,
-    tv: Boolean,
+    large: Boolean,
     selectedChannelIndex: Int,
+    autofocusSelected: Boolean = false,
 ) {
     val selectedGroupIndex by vm.selectedGroupIndex.collectAsStateWithLifecycle()
     val channels = vm.channelsOf(selectedGroupIndex)
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp)) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
         items(channels, key = { it.channelNum }) { c ->
             LiveListItem(
                 num = "${c.channelNum}",
                 text = c.channelName,
                 selected = c.channelIndex == selectedChannelIndex,
-                large = tv,
+                large = large,
+                autofocus = autofocusSelected && c.channelIndex == selectedChannelIndex,
                 onClick = { vm.clickLiveChannel(c.channelIndex) },
             )
         }
@@ -442,280 +469,61 @@ private fun ChannelList(
 @Composable
 private fun SourceList(
     vm: LiveViewModel,
-    tv: Boolean,
-    currentChannel: com.me.ubox.data.live.LiveChannelItem?,
+    large: Boolean,
+    currentChannel: LiveChannelItem?,
 ) {
-    // 源列表只在有播放频道时填充 (对照 updateMobileSourceList)
     if (currentChannel == null) return
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp)) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
         items(currentChannel.sourceNum) { i ->
             LiveListItem(
                 text = currentChannel.channelSourceNames.getOrElse(i) { "源${i + 1}" },
                 selected = i == currentChannel.sourceIndex,
-                large = tv,
+                large = large,
                 onClick = { vm.playChannelBySource(i) },
             )
         }
     }
 }
 
-// ---------------------------------------------------------------- 控制浮层
+// ---------------------------------------------------------------- 触摸端 (手机 / 平板)
 
+/** 手机: 播放器 weight 2 + 52dp 信息栏 + 三列列表 weight 3; 全屏时列表与信息栏隐藏. */
 @Composable
-private fun PhoneOverlay(
-    visible: Boolean,
-    playing: Boolean,
-    portraitFullscreen: Boolean,
+private fun PhoneLiveLayout(
     vm: LiveViewModel,
-) {
-    if (!visible) return
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (portraitFullscreen) {
-            OverlayIconButton(
-                icon = Icons.Filled.ArrowBack,
-                modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
-                onClick = { vm.exitFullscreen() },
-            )
-        }
-        OverlayIconButton(
-            icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-            size = 56.dp,
-            modifier = Modifier.align(Alignment.Center),
-            onClick = { vm.togglePlayPause() },
-        )
-        OverlayIconButton(
-            icon = Icons.Filled.Refresh,
-            modifier = Modifier.align(Alignment.BottomStart).padding(8.dp),
-            onClick = { vm.refreshChannel() },
-        )
-        OverlayIconButton(
-            icon = if (portraitFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
-            onClick = { vm.toggleFullscreen() },
-        )
-    }
-}
-
-@Composable
-private fun OverlayIconButton(
-    icon: ImageVector,
-    modifier: Modifier = Modifier,
-    size: androidx.compose.ui.unit.Dp = 40.dp,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = modifier
-            .width(size)
-            .height(size)
-            .background(Color(0x66000000), CircleShape)
-            .pageFocusGuard()
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.width(size / 2).height(size / 2),
-            tint = Color.White,
-        )
-    }
-}
-
-/** TV 底部常驻控制条 (遥控器可聚焦). */
-@Composable
-private fun TvControlBar(vm: LiveViewModel, playing: Boolean) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color(0x99000000))
-            .padding(horizontal = 16.dp, vertical = 6.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TvButton(
-                label = if (playing) "暂停" else "播放",
-                icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                height = 40.dp,
-                fontSize = 15,
-                onTap = { vm.togglePlayPause() },
-            )
-            Spacer(Modifier.width(12.dp))
-            TvButton(
-                label = "刷新",
-                icon = Icons.Filled.Refresh,
-                height = 40.dp,
-                fontSize = 15,
-                onTap = { vm.refreshChannel() },
-            )
-            Spacer(Modifier.width(12.dp))
-            TvButton(
-                label = "上一源",
-                icon = Icons.Filled.SkipPrevious,
-                height = 40.dp,
-                fontSize = 15,
-                onTap = { vm.playPreSourceManual() },
-            )
-            Spacer(Modifier.width(12.dp))
-            TvButton(
-                label = "下一源",
-                icon = Icons.Filled.SkipNext,
-                height = 40.dp,
-                fontSize = 15,
-                onTap = { vm.playNextSourceManual() },
-            )
-            Spacer(Modifier.width(12.dp))
-            TvButton(
-                label = "全屏",
-                icon = Icons.Filled.Fullscreen,
-                height = 40.dp,
-                fontSize = 15,
-                onTap = { vm.enterTvFullscreen() },
-            )
-        }
-    }
-}
-
-// ---------------------------------------------------------------- TV 布局
-
-@Composable
-private fun TvLiveLayout(
-    vm: LiveViewModel,
-    groups: List<com.me.ubox.data.live.LiveChannelGroup>,
+    groups: List<LiveChannelGroup>,
+    loading: Boolean,
+    noSource: Boolean,
+    error: String,
     selectedGroupIndex: Int,
     selectedChannelIndex: Int,
-    currentChannel: com.me.ubox.data.live.LiveChannelItem?,
-    playing: Boolean,
-    buffering: Boolean,
+    currentChannel: LiveChannelItem?,
     videoMounted: Boolean,
-    tvPanel: Boolean,
+    fullscreen: Boolean,
     badgeVisible: Boolean,
     badgeName: String,
     videoAspectRatio: Float,
-    touch: Boolean,
+    scaleType: Int,
     onPasswordNeeded: (Int) -> Unit,
 ) {
-    val loading by vm.loading.collectAsStateWithLifecycle()
-    val noSource by vm.noSource.collectAsStateWithLifecycle()
-    val error by vm.error.collectAsStateWithLifecycle()
-    val tvFullscreen by vm.tvFullscreen.collectAsStateWithLifecycle()
-
-    if (tvFullscreen) {
-        // TV 全屏: 视频铺满 + OK 唤出右侧频道面板
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .then(if (touch) Modifier.liveTouchGestures(vm = vm, panelVisible = tvPanel) else Modifier)
-                .focusable()
-                .onPreviewKeyEvent { event ->
-                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-                    val k = event.nativeKeyEvent.keyCode
-                    when (k) {
-                        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> {
-                            vm.playAdjacentChannel(-1); true
-                        }
-                        KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> {
-                            vm.playAdjacentChannel(1); true
-                        }
-                        KeyEvent.KEYCODE_DPAD_LEFT -> {
-                            vm.playPreSourceManual(); true
-                        }
-                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                            vm.playNextSourceManual(); true
-                        }
-                        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                            vm.showTvPanel(); true
-                        }
-                        KeyEvent.KEYCODE_MENU -> {
-                            vm.refreshChannel(); true
-                        }
-                        else -> false
-                    }
-                },
-        ) {
-            PlayerArea(vm = vm, tv = true, fullscreen = true, videoAspectRatio = videoAspectRatio)
-            if (tvPanel) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .width((340).dp)
-                        .background(Color(0xE6101418))
-                        // 面板空白处的点击不能穿透到下面的"点击收起面板"手势.
-                        .pointerInput(Unit) { detectTapGestures { } },
-                ) {
-                    Column {
-                        InfoBar(vm = vm, tv = true)
-                        LiveBodyArea(
-                            vm = vm,
-                            tv = true,
-                            groups = groups,
-                            loading = loading,
-                            noSource = noSource,
-                            error = error,
-                            selectedGroupIndex = selectedGroupIndex,
-                            selectedChannelIndex = selectedChannelIndex,
-                            currentChannel = currentChannel,
-                            onGoSettings = {},
-                            onPasswordNeeded = onPasswordNeeded,
-                        )
-                    }
-                }
-            }
-            // 触摸 (平板): 面板显示时左上角给"退出全屏"按钮 (遥控器靠返回键).
-            if (touch && tvPanel) {
-                Box(modifier = Modifier.align(Alignment.TopStart).padding(16.dp)) {
-                    TvButton(
-                        label = "退出全屏",
-                        icon = Icons.Filled.FullscreenExit,
-                        height = 44.dp,
-                        fontSize = 15,
-                        onTap = { vm.exitTvFullscreen() },
-                    )
-                }
-            }
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxWidth().weight(if (fullscreen) 1f else 2f)) {
+            TouchPlayerArea(
+                vm = vm,
+                videoMounted = videoMounted,
+                fullscreen = fullscreen,
+                badgeVisible = badgeVisible,
+                badgeName = badgeName,
+                videoAspectRatio = videoAspectRatio,
+                scaleType = scaleType,
+                tablet = false,
+            )
         }
-        return
-    }
-
-    // TV 非全屏: 播放器(72%) + 右侧面板(28%); 播放器区域 OK 键进入全屏.
-    Row(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .weight(0.72f)
-                .fillMaxHeight()
-                // 触摸 (平板): 点击视频区域进入全屏 (遥控器靠 OK 键); 控制条按钮先消费自己的点击.
-                .then(
-                    if (touch) {
-                        Modifier.pointerInput(Unit) { detectTapGestures(onTap = { vm.enterTvFullscreen() }) }
-                    } else {
-                        Modifier
-                    }
-                )
-                .focusable()
-                .onPreviewKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown &&
-                        (event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                            event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER)
-                    ) {
-                        vm.enterTvFullscreen()
-                        true
-                    } else {
-                        false
-                    }
-                },
-        ) {
-            PlayerArea(vm = vm, tv = true, fullscreen = false, videoAspectRatio = videoAspectRatio)
-        }
-        Box(modifier = Modifier.weight(0.28f).fillMaxHeight()) {
-            Column {
-                InfoBar(vm = vm, tv = true)
-                LiveBodyArea(
+        if (!fullscreen) {
+            LiveInfoBar(vm = vm, tablet = false)
+            Box(modifier = Modifier.weight(3f)) {
+                LiveChannelArea(
                     vm = vm,
-                    tv = true,
                     groups = groups,
                     loading = loading,
                     noSource = noSource,
@@ -723,7 +531,8 @@ private fun TvLiveLayout(
                     selectedGroupIndex = selectedGroupIndex,
                     selectedChannelIndex = selectedChannelIndex,
                     currentChannel = currentChannel,
-                    onGoSettings = {},
+                    large = false,
+                    weights = listOf(1f, 1.5f, 1f),
                     onPasswordNeeded = onPasswordNeeded,
                 )
             }
@@ -731,43 +540,385 @@ private fun TvLiveLayout(
     }
 }
 
+/** 平板: 左 72% 播放器 | 右 28% (52dp 信息栏 + 三列列表 0.5 : 0.8 : 0.5); 全屏时右侧隐藏. */
+@Composable
+private fun TabletLiveLayout(
+    vm: LiveViewModel,
+    groups: List<LiveChannelGroup>,
+    loading: Boolean,
+    noSource: Boolean,
+    error: String,
+    selectedGroupIndex: Int,
+    selectedChannelIndex: Int,
+    currentChannel: LiveChannelItem?,
+    videoMounted: Boolean,
+    fullscreen: Boolean,
+    badgeVisible: Boolean,
+    badgeName: String,
+    videoAspectRatio: Float,
+    scaleType: Int,
+    onPasswordNeeded: (Int) -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(if (fullscreen) 1f else 0.72f).fillMaxHeight()) {
+            TouchPlayerArea(
+                vm = vm,
+                videoMounted = videoMounted,
+                fullscreen = fullscreen,
+                badgeVisible = badgeVisible,
+                badgeName = badgeName,
+                videoAspectRatio = videoAspectRatio,
+                scaleType = scaleType,
+                tablet = true,
+            )
+        }
+        if (!fullscreen) {
+            Column(modifier = Modifier.weight(0.28f).fillMaxHeight()) {
+                LiveInfoBar(vm = vm, tablet = true)
+                Box(modifier = Modifier.weight(1f)) {
+                    LiveChannelArea(
+                        vm = vm,
+                        groups = groups,
+                        loading = loading,
+                        noSource = noSource,
+                        error = error,
+                        selectedGroupIndex = selectedGroupIndex,
+                        selectedChannelIndex = selectedChannelIndex,
+                        currentChannel = currentChannel,
+                        large = true,
+                        weights = listOf(0.5f, 0.8f, 0.5f),
+                        onPasswordNeeded = onPasswordNeeded,
+                    )
+                }
+            }
+        }
+    }
+}
 
 /**
- * 平板触摸手势 (对应遥控器在 TV 全屏直播里的按键):
- *   单击画面 = 显示/收起右侧频道面板 (OK 键);
- *   上滑 / 下滑 = 下一个 / 上一个频道 (方向键 下/上);
- *   左滑 / 右滑 = 下一源 / 上一源 (方向键 右/左).
- * 面板显示时只响应单击收起, 不响应滑动 (避免与列表滚动冲突).
+ * 触摸端播放器: 点击画面唤出控制浮层 (对照 NovaBox live_control_overlay),
+ * 浮层 = 返回 (仅全屏) + 中央播放暂停 + 刷新 + 全屏, 4 秒无操作自动隐藏.
  */
 @Composable
-private fun Modifier.liveTouchGestures(vm: LiveViewModel, panelVisible: Boolean): Modifier {
-    val threshold = with(LocalDensity.current) { 80.dp.toPx() }
-    return this
-        .pointerInput(panelVisible) {
-            detectTapGestures(
-                onTap = { if (panelVisible) vm.hideTvPanel() else vm.showTvPanel() },
+private fun BoxScope.TouchPlayerArea(
+    vm: LiveViewModel,
+    videoMounted: Boolean,
+    fullscreen: Boolean,
+    badgeVisible: Boolean,
+    badgeName: String,
+    videoAspectRatio: Float,
+    scaleType: Int,
+    tablet: Boolean,
+) {
+    val overlayVisible by vm.overlayVisible.collectAsStateWithLifecycle()
+    val playing by vm.playing.collectAsStateWithLifecycle()
+
+    LiveVideo(
+        vm = vm,
+        videoMounted = videoMounted,
+        videoAspectRatio = videoAspectRatio,
+        scaleType = scaleType,
+        badgeVisible = badgeVisible,
+        badgeName = badgeName,
+        tv = false,
+        modifier = Modifier.fillMaxSize(),
+    )
+    if (!overlayVisible) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .clickableNoRipple { vm.toggleOverlay() },
+        )
+    } else {
+        LiveControlOverlay(
+            playing = playing,
+            fullscreen = fullscreen,
+            tablet = tablet,
+            onPlayPause = { vm.togglePlayPause(); vm.toggleOverlay() },
+            onRefresh = { vm.refreshChannel(); vm.toggleOverlay() },
+            onFullscreen = { vm.toggleFullscreen() },
+            onBack = { vm.exitFullscreen() },
+            onDismiss = { vm.hideOverlay() },
+        )
+    }
+}
+
+/** 直播控制浮层: 左上返回 (仅全屏) + 中央播放/暂停 + 左下刷新 + 右下全屏. */
+@Composable
+private fun BoxScope.LiveControlOverlay(
+    playing: Boolean,
+    fullscreen: Boolean,
+    tablet: Boolean,
+    onPlayPause: () -> Unit,
+    onRefresh: () -> Unit,
+    onFullscreen: () -> Unit,
+    onBack: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val icon = if (tablet) 44.dp else 40.dp
+    val center = if (tablet) 64.dp else 56.dp
+    val action = if (tablet) 40.dp else 36.dp
+    val pad = if (tablet) 10.dp else 8.dp
+    Box(
+        modifier = Modifier
+            .matchParentSize()
+            .clickableNoRipple(onClick = onDismiss),
+    ) {
+        if (fullscreen) {
+            OverlayIconButton(
+                imageVector = Icons.Filled.FullscreenExit,
+                size = icon,
+                padding = pad,
+                modifier = Modifier.align(Alignment.TopStart),
+                onClick = onBack,
             )
         }
-        .pointerInput(panelVisible) {
-            if (panelVisible) return@pointerInput
-            var dx = 0f
-            var dy = 0f
-            detectDragGestures(
-                onDragStart = { dx = 0f; dy = 0f },
-                onDragEnd = {
-                    if (kotlin.math.abs(dy) >= kotlin.math.abs(dx)) {
-                        if (dy <= -threshold) vm.playAdjacentChannel(1)
-                        else if (dy >= threshold) vm.playAdjacentChannel(-1)
-                    } else {
-                        if (dx <= -threshold) vm.playNextSourceManual()
-                        else if (dx >= threshold) vm.playPreSourceManual()
+        OverlayIconButton(
+            imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+            size = center,
+            padding = 0.dp,
+            modifier = Modifier.align(Alignment.Center),
+            onClick = onPlayPause,
+        )
+        OverlayIconButton(
+            imageVector = Icons.Filled.Refresh,
+            size = action,
+            padding = pad,
+            modifier = Modifier.align(Alignment.BottomStart),
+            onClick = onRefresh,
+        )
+        OverlayIconButton(
+            imageVector = if (fullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+            size = action,
+            padding = pad,
+            modifier = Modifier.align(Alignment.BottomEnd),
+            onClick = onFullscreen,
+        )
+    }
+}
+
+@Composable
+private fun OverlayIconButton(
+    imageVector: ImageVector,
+    size: Dp,
+    padding: Dp,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .padding(padding)
+            .background(Color(0x66000000), CircleShape)
+            .clickableNoRipple(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.fillMaxSize(0.62f),
+        )
+    }
+}
+
+/** 无涟漪点击: 浮层本身是半透明圆, 不需要 ripple 反馈. */
+private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
+    clickable(
+        interactionSource = MutableInteractionSource(),
+        indication = null,
+        onClick = onClick,
+    )
+
+// ---------------------------------------------------------------- TV (遥控器)
+
+/**
+ * TV 直播页 (对照 NovaTV LivePlayActivity): 视频恒铺满, 确定键呼出右侧频道面板.
+ *
+ * 按键 (面板隐藏时):
+ *   上 / 频道+ = 上一个频道;  下 / 频道- = 下一个频道;
+ *   左 = 上一个线路;          右 = 下一个线路;
+ *   确定 = 呼出频道面板;      MENU = 循环画面比例 (不做设置菜单).
+ * 面板显示时方向键交给焦点遍历, 返回键收起面板.
+ */
+@Composable
+private fun TvLiveLayout(
+    vm: LiveViewModel,
+    groups: List<LiveChannelGroup>,
+    selectedGroupIndex: Int,
+    selectedChannelIndex: Int,
+    currentChannel: LiveChannelItem?,
+    videoMounted: Boolean,
+    tvPanel: Boolean,
+    badgeVisible: Boolean,
+    badgeName: String,
+    videoAspectRatio: Float,
+    scaleType: Int,
+    onPasswordNeeded: (Int) -> Unit,
+) {
+    val loading by vm.loading.collectAsStateWithLifecycle()
+    val noSource by vm.noSource.collectAsStateWithLifecycle()
+    val rootFocus = remember { FocusRequester() }
+    // 面板收起后把焦点还给画面 (面板里的焦点节点已随面板移除).
+    LaunchedEffect(tvPanel) {
+        if (!tvPanel) {
+            repeat(6) {
+                withFrameNanos { }
+                try {
+                    rootFocus.requestFocus()
+                    return@LaunchedEffect
+                } catch (_: IllegalStateException) {
+                }
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .focusRequester(rootFocus)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (tvPanel) return@onPreviewKeyEvent false
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (event.nativeKeyEvent.keyCode) {
+                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_CHANNEL_UP -> {
+                        vm.playAdjacentChannel(-1); true
                     }
-                },
-                onDrag = { change, amount ->
-                    change.consume()
-                    dx += amount.x
-                    dy += amount.y
-                },
+                    KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_CHANNEL_DOWN -> {
+                        vm.playAdjacentChannel(1); true
+                    }
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        vm.playPreSourceManual(); true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        vm.playNextSourceManual(); true
+                    }
+                    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                        vm.showTvPanel(); true
+                    }
+                    KeyEvent.KEYCODE_MENU -> {
+                        val s = vm.cycleScale()
+                        AppSnackbar.show("画面比例: ${PlayerOptions.SCALE_NAMES[s]}")
+                        true
+                    }
+                    else -> false
+                }
+            },
+    ) {
+        LiveVideo(
+            vm = vm,
+            videoMounted = videoMounted,
+            videoAspectRatio = videoAspectRatio,
+            scaleType = scaleType,
+            badgeVisible = badgeVisible,
+            badgeName = badgeName,
+            tv = true,
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (tvPanel) {
+            TvChannelPanel(
+                vm = vm,
+                groups = groups,
+                loading = loading,
+                noSource = noSource,
+                selectedGroupIndex = selectedGroupIndex,
+                selectedChannelIndex = selectedChannelIndex,
+                currentChannel = currentChannel,
+                onPasswordNeeded = onPasswordNeeded,
             )
         }
+    }
+}
+
+/** TV 频道面板 (贴右侧): 分组列 180dp + 频道列自适应 + 底部线路行 (多线路时). */
+@Composable
+private fun BoxScope.TvChannelPanel(
+    vm: LiveViewModel,
+    groups: List<LiveChannelGroup>,
+    loading: Boolean,
+    noSource: Boolean,
+    selectedGroupIndex: Int,
+    selectedChannelIndex: Int,
+    currentChannel: LiveChannelItem?,
+    onPasswordNeeded: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .align(Alignment.CenterEnd)
+            .fillMaxHeight()
+            .width(460.dp)
+            .background(Color(0xE6101418))
+            .clickableNoRipple { },
+    ) {
+        Column(modifier = Modifier.width(180.dp).fillMaxHeight()) {
+            PanelHeader("分组")
+            if (noSource || groups.isEmpty()) {
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = if (loading) "加载中…" else "暂无分组",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 16.sp,
+                    )
+                }
+            } else {
+                Box(modifier = Modifier.weight(1f)) {
+                    GroupList(
+                        vm = vm,
+                        groups = groups,
+                        selectedGroupIndex = selectedGroupIndex,
+                        large = true,
+                        onPasswordNeeded = onPasswordNeeded,
+                    )
+                }
+            }
+        }
+        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            PanelHeader(currentChannel?.channelName ?: "请选择频道")
+            Box(modifier = Modifier.weight(1f)) {
+                ChannelList(
+                    vm = vm,
+                    large = true,
+                    selectedChannelIndex = selectedChannelIndex,
+                    autofocusSelected = true,
+                )
+            }
+            if (currentChannel != null && currentChannel.sourceNum > 1) {
+                PanelHeader("线路 (${currentChannel.sourceIndex + 1}/${currentChannel.sourceNum})")
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(currentChannel.sourceNum) { i ->
+                        LiveListItem(
+                            text = currentChannel.channelSourceNames.getOrElse(i) { "源${i + 1}" },
+                            selected = i == currentChannel.sourceIndex,
+                            large = false,
+                            onClick = { vm.playChannelBySource(i) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PanelHeader(text: String) {
+    Text(
+        text = text,
+        color = Color.White,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        fontWeight = FontWeight.Bold,
+        fontSize = 19.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0x33000000))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
 }

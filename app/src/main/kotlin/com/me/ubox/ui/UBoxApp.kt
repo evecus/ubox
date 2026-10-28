@@ -138,7 +138,13 @@ object AppSnackbar {
 sealed class Route {
     data object Main : Route()
 
-    data class Detail(
+    /**
+     * 点播页 (三端同一个单页: 影视信息 + 源 + 剧集 + 播放, 可切全屏):
+     *   TV = 左播放器 | 右信息面板, 遥控器操作;
+     *   平板 = 左 73% 播放器 | 右 27% 信息 (对照 NovaBox sw600dp);
+     *   手机 = 上 16:9 播放器 | 下 信息 (对照 NovaBox activity_detail).
+     */
+    data class Vod(
         val siteKey: String,
         val vodId: String,
         val vodName: String,
@@ -175,16 +181,6 @@ sealed class Route {
     /** 直播页: 独立页面, 不带导航栏 (同搜索页). */
     data object Live : Route()
 
-    data class Player(
-        val siteKey: String,
-        val vodId: String,
-        val vodName: String,
-        val cover: String,
-        val flag: String,
-        val epNames: List<String>,
-        val epUrls: List<String>,
-        val startIndex: Int,
-    ) : Route()
 }
 
 /**
@@ -231,12 +227,14 @@ fun UBoxApp() {
     }
     Box(modifier = Modifier.fillMaxSize()) {
         val route = backStack.last()
+        // 点播三端都是单页 (信息 + 源 + 剧集 + 播放, 可切全屏).
+        val openDetail: (String, String, String) -> Unit = { siteKey, vodId, name ->
+            backStack.add(Route.Vod(siteKey, vodId, name))
+        }
         when (route) {
         Route.Main -> MainShell(
             tv = tv,
-            onOpenDetail = { siteKey, vodId, name ->
-                backStack.add(Route.Detail(siteKey, vodId, name))
-            },
+            onOpenDetail = openDetail,
             onOpenSearch = { q ->
                 backStack.add(Route.Search(initialQuery = q, autoSearch = q.isNotEmpty()))
             },
@@ -247,40 +245,14 @@ fun UBoxApp() {
             onOpenHistory = { backStack.add(Route.History) },
             onOpenLive = { backStack.add(Route.Live) },
             onOpenSettings = { AppShell.selectTab(AppShell.SETTINGS_TAB) },
-            onOpenPlayer = { siteKey, vodId, name, cover, flag, epNames, epUrls, startIndex ->
-                backStack.add(
-                    Route.Player(siteKey, vodId, name, cover, flag, epNames, epUrls, startIndex)
-                )
-            },
         )
-
-        is Route.Detail -> RouteOwned {
-            com.me.ubox.ui.detail.DetailScreen(
-                siteKey = route.siteKey,
-                vodId = route.vodId,
-                vodName = route.vodName,
-                onBack = { backStack.removeAt(backStack.size - 1) },
-                onOpenPlayer = { siteKey, vodId, name, cover, flag, epNames, epUrls, startIndex ->
-                    backStack.add(
-                        Route.Player(siteKey, vodId, name, cover, flag, epNames, epUrls, startIndex)
-                    )
-                },
-                onReplaceWithDetail = { siteKey, vodId, name ->
-                    // 换源: pushReplacement (对照 Flutter 版 _showSwitchMenu)
-                    backStack.removeAt(backStack.size - 1)
-                    backStack.add(Route.Detail(siteKey, vodId, name))
-                },
-            )
-        }
 
         is Route.Browse -> RouteOwned {
             com.me.ubox.ui.browse.BrowseScreen(
                 siteKey = route.siteKey,
                 initialTid = route.initialTid,
                 onBack = { backStack.removeAt(backStack.size - 1) },
-                onOpenDetail = { siteKey, vodId, name ->
-                    backStack.add(Route.Detail(siteKey, vodId, name))
-                },
+                onOpenDetail = openDetail,
             )
         }
 
@@ -313,27 +285,21 @@ fun UBoxApp() {
                 searchSiteKey = route.searchSiteKey,
                 query = route.query,
                 onBack = { backStack.removeAt(backStack.size - 1) },
-                onOpenDetail = { siteKey, vodId, name ->
-                    backStack.add(Route.Detail(siteKey, vodId, name))
-                },
+                onOpenDetail = openDetail,
             )
         }
 
         Route.Favorites -> RouteOwned {
             com.me.ubox.ui.favorites.FavoritesScreen(
                 onBack = { backStack.removeAt(backStack.size - 1) },
-                onOpenDetail = { siteKey, vodId, name ->
-                    backStack.add(Route.Detail(siteKey, vodId, name))
-                },
+                onOpenDetail = openDetail,
             )
         }
 
         Route.History -> RouteOwned {
             com.me.ubox.ui.history.HistoryScreen(
                 onBack = { backStack.removeAt(backStack.size - 1) },
-                onOpenDetail = { siteKey, vodId, name ->
-                    backStack.add(Route.Detail(siteKey, vodId, name))
-                },
+                onOpenDetail = openDetail,
             )
         }
 
@@ -352,19 +318,20 @@ fun UBoxApp() {
             }
         }
 
-        is Route.Player -> RouteOwned {
-            com.me.ubox.ui.player.PlayerScreen(
+        is Route.Vod -> RouteOwned {
+            com.me.ubox.ui.vod.VodScreen(
                 siteKey = route.siteKey,
                 vodId = route.vodId,
                 vodName = route.vodName,
-                cover = route.cover,
-                flag = route.flag,
-                epNames = route.epNames,
-                epUrls = route.epUrls,
-                startIndex = route.startIndex,
                 onBack = { backStack.removeAt(backStack.size - 1) },
+                onSwitchSite = { siteKey, vodId, name ->
+                    // 换源: pushReplacement (新站点重新拉详情)
+                    backStack.removeAt(backStack.size - 1)
+                    backStack.add(Route.Vod(siteKey, vodId, name))
+                },
             )
         }
+
         }
         androidx.compose.material3.SnackbarHost(
             hostState = snackbarHostState,
@@ -401,7 +368,6 @@ fun MainShell(
     onOpenHistory: () -> Unit,
     onOpenLive: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenPlayer: (String, String, String, String, String, List<String>, List<String>, Int) -> Unit,
 ) {
     val tab by AppShell.tabIndex.collectAsStateWithLifecycle()
     // 导航栏 autofocus 只在首次成功聚焦前生效: 刚退出直播全屏时导航栏重建,
@@ -419,7 +385,6 @@ fun MainShell(
                 onOpenHistory = onOpenHistory,
                 onOpenLive = onOpenLive,
                 onOpenSettings = onOpenSettings,
-                onOpenPlayer = onOpenPlayer,
             )
         },
         {

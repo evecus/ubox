@@ -85,7 +85,6 @@ fun HomeScreen(
     onOpenHistory: () -> Unit,
     onOpenLive: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenPlayer: (String, String, String, String, String, List<String>, List<String>, Int) -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
     val tv by TvMode.isTV.collectAsStateWithLifecycle()

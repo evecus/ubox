@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,9 +42,11 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -70,13 +74,21 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.me.ubox.TvMode
+import com.me.ubox.danmaku.DanmakuManager
+import com.me.ubox.danmaku.DanmuSettings
 import com.me.ubox.ui.components.formatDuration
+import master.flame.danmaku.ui.widget.DanmakuView
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
@@ -139,7 +151,8 @@ class PlayerUiState {
 
     /** 是否有弹层/面板打开 (自动隐藏计时暂停). */
     val anyPanelOpen: Boolean
-        get() = showEpisodes || showSpeed || showScale || showSkip || showDanmuSetting || showDanmuSearch
+        get() = showEpisodes || showSpeed || showScale || showSkip ||
+            showDanmuSetting || showDanmuSearch
 }
 
 // ---------------------------------------------------------------- 工具
@@ -628,10 +641,158 @@ fun EpisodePanel(
     }
 }
 
+/**
+ * 全屏选集弹窗 (对照 NovaBox EpisodeSelectDialog):
+ * 居中对话框, 宽度约为屏幕 80%, 网格列数按集名长度自适应, 标题栏 56dp + 右上角关闭.
+ */
+@Composable
+fun EpisodeSelectDialog(
+    epNames: List<String>,
+    count: Int,
+    currentIdx: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (count <= 0) return
+    val maxLen = (0 until count).maxOfOrNull { epLabel(epNames, it).length } ?: 3
+    val columns = when {
+        maxLen <= 3 -> 6
+        maxLen <= 6 -> 5
+        maxLen <= 10 -> 4
+        maxLen <= 16 -> 3
+        else -> 2
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("选集", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismiss) { Text("关闭") }
+            }
+        },
+        text = {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 400.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(count) { i ->
+                    val selected = i == currentIdx
+                    Box(
+                        modifier = Modifier
+                            .height(48.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (selected) AccentBlue else Color.White.copy(alpha = 0.12f)
+                            )
+                            .clickable { onSelect(i) }
+                            .padding(horizontal = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = epLabel(epNames, i),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = if (selected) 15.sp else 14.sp,
+                            color = Color.White,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
+}
+
 /** 播放页用到的图标 (集中一处, 手势层/OSD 共用). */
 internal object PlayerIcons {
     val FastForward: ImageVector get() = Icons.Filled.FastForward
     val FastRewind: ImageVector get() = Icons.Filled.FastRewind
     val Brightness: ImageVector get() = Icons.Filled.Brightness6
     val Volume: ImageVector get() = Icons.Filled.VolumeUp
+}
+
+// ================================================================ 弹幕层 + 加载/错误态
+
+/**
+ * 弹幕覆盖层: 弹幕大师 (DanmakuFlameMaster) 的 DanmakuView.
+ * 顶部边距用 offset 整体下移 (对照原版 UBox FrameLayout.LayoutParams.topMargin:
+ * view 高度保持铺满, 轨道范围由行数设置决定, 两者互相独立).
+ */
+@Composable
+internal fun DanmakuLayer(modifier: Modifier = Modifier) {
+    val revision by DanmuSettings.revision.collectAsStateWithLifecycle()
+    // 设置变更 (参数/开关) -> 热更新库参数 / 关闭时收画面 (对照 applySettings).
+    // 布局类参数 (行数/边距/字号) 的完整重备由弹幕设置弹窗关闭时触发 (reload=true).
+    LaunchedEffect(revision) {
+        DanmakuManager.onSettingsChanged(reload = false)
+    }
+    if (!DanmuSettings.open) return
+    val density = LocalDensity.current
+    val topMargin = with(density) { DanmuSettings.topMarginPx.toDp() }
+    Box(modifier = modifier) {
+        AndroidView(
+            factory = { ctx ->
+                DanmakuView(ctx).also { DanmakuManager.attach(it) }
+            },
+            onRelease = { view ->
+                // 只摘掉"自己": 切换布局分支时新视图的 factory 先于旧视图的 onRelease,
+                // 无条件 detach 会把刚 attach 的新视图摘掉 -> 全屏/重建后弹幕消失.
+                DanmakuManager.detach(view)
+                try {
+                    view.release()
+                } catch (_: Exception) {
+                }
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .offset(y = topMargin),
+        )
+    }
+}
+
+@Composable
+internal fun StatusView(
+    error: String,
+    onBack: () -> Unit,
+    onRetry: () -> Unit,
+    hasNext: Boolean,
+    onNext: () -> Unit,
+) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (error.isEmpty()) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(38.dp),
+                )
+            } else {
+                Text(
+                    text = error,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    maxLines = 6,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row {
+                TextButton(onClick = onBack) { Text("返回") }
+                if (error.isNotEmpty()) {
+                    TextButton(onClick = onRetry) { Text("重试") }
+                }
+                if (hasNext) {
+                    TextButton(onClick = onNext) { Text("下一集") }
+                }
+            }
+        }
+    }
 }
