@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
@@ -34,6 +35,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -459,15 +461,44 @@ private fun SmallLayout(
     var showDesc by remember { mutableStateOf(false) }
     val des = com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_content").orEmpty()
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    // 剧集网格列数 (对照 NovaTV refreshList: 按最长集名自适应 2~6 列).
+    val maxChars = remember(g) { g?.eps?.maxOfOrNull { it.length } ?: 0 }
+    val cols = when {
+        maxChars <= 5 -> 6
+        maxChars <= 8 -> 5
+        maxChars <= 12 -> 4
+        maxChars <= 16 -> 3
+        else -> 2
+    }
+    val gridState = rememberLazyGridState()
+    // 当前播放集变化 / 换线路 / 切正倒序: 自动翻到所在分页 (对照 NovaTV 选中集定位).
+    LaunchedEffect(epIndex, flagIndex, reverse, total) {
+        if (paged) {
+            val pos = ordered.indexOf(epIndex)
+            if (pos >= 0) page = pos / PAGE_SIZE
+        }
+    }
+    // 翻页 / 选中变化后: 把当前集滚到可见区 (留出上一行).
+    LaunchedEffect(safePage, epIndex, reverse, total, cols) {
+        val idx = pageItems.indexOf(epIndex)
+        runCatching { gridState.scrollToItem(if (idx >= 0) maxOf(0, idx - cols) else 0) }
+    }
+
+    // NovaTV 的布局按 1280 设计宽度等比缩放: 顶部区高 300 单位 (预览播放器 470x300).
+    // 注意: 顶部 Row 必须给定固定高度. 之前 Row 里的信息列用了 fillMaxHeight(), 而 Row 自身没有高度,
+    // 会撑满整个屏幕剩余高度, 下面的"剧集网格"(weight=1) 分到的高度为 0 —— 即"没有剧集列表".
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    val topH = minOf(maxWidth / 1280f * 300f, maxHeight * 0.46f)
+    val playerW = topH * (470f / 300f)
+    Column(modifier = Modifier.fillMaxSize()) {
         Spacer(Modifier.height(10.dp))
         // ===== 顶部: 圆角预览播放器 + 影视信息 (对照 NovaTV topLayout) =====
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 50.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().height(topH).padding(horizontal = 50.dp)) {
             // 左侧: 圆角预览播放器 (比例 470:300, 对照 NovaTV previewPlayer / preview_player_round).
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(0.32f)
-                    .aspectRatio(470f / 300f)
+                    .width(playerW)
+                    .fillMaxHeight()
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color.Black)
                     .focusable()
@@ -498,10 +529,11 @@ private fun SmallLayout(
                 Text(vm.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(Modifier.height(6.dp))
                 val metaSub = listOfNotNull(
-                    vm.siteName.takeIf { it.isNotEmpty() },
-                    com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_year").takeIf { !it.isNullOrEmpty() },
-                    com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_area").takeIf { !it.isNullOrEmpty() },
-                    com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_type").takeIf { !it.isNullOrEmpty() },
+                    vm.siteName.takeIf { it.isNotEmpty() }?.let { "来源：$it" },
+                    com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_year").takeIf { !it.isNullOrEmpty() }?.let { "年份：$it" },
+                    com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_area").takeIf { !it.isNullOrEmpty() }?.let { "地区：$it" },
+                    com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_lang").takeIf { !it.isNullOrEmpty() }?.let { "语言：$it" },
+                    com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_type").takeIf { !it.isNullOrEmpty() }?.let { "类型：$it" },
                 )
                 if (metaSub.isNotEmpty()) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -511,17 +543,17 @@ private fun SmallLayout(
                 }
                 val actor = com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_actor").orEmpty()
                 if (actor.isNotEmpty()) {
-                    Text("演员: $actor", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("演员：$actor", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(4.dp))
                 }
                 val director = com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_director").orEmpty()
                 if (director.isNotEmpty()) {
-                    Text("导演: $director", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("导演：$director", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.height(4.dp))
                 }
                 val playUrl = g?.urls?.getOrNull(epIndex).orEmpty()
                 if (playUrl.isNotEmpty()) {
-                    Text("播放地址: $playUrl", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable {
+                    Text("播放地址：$playUrl", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable {
                         val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                         cm.setPrimaryClip(android.content.ClipData.newPlainText(null, playUrl))
                         AppSnackbar.show("已复制播放地址")
@@ -529,7 +561,7 @@ private fun SmallLayout(
                     Spacer(Modifier.height(4.dp))
                 }
                 if (des.isNotEmpty()) {
-                    Text("简介: $des", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    Text("内容简介：$des", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 }
                 Spacer(Modifier.weight(1f))
                 // 四个彩色胶囊按钮 (对照 NovaTV button_detail_play / _quick_search / _sort / _collect).
@@ -581,7 +613,8 @@ private fun SmallLayout(
             }
             else -> {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(6),
+                    state = gridState,
+                    columns = GridCells.Fixed(cols),
                     modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 50.dp, vertical = 6.dp),
                     contentPadding = PaddingValues(2.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -595,6 +628,7 @@ private fun SmallLayout(
                 }
             }
         }
+    }
     }
     // 简介弹窗 (对照 NovaTV DescDialog).
     if (showDesc) {
