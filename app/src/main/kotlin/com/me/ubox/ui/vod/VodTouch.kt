@@ -409,7 +409,7 @@ internal fun VodTouchScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                Text(detailError)
+                                Text(detailError, color = Color.White)
                                 Spacer(Modifier.height(8.dp))
                                 androidx.compose.material3.TextButton(onClick = vm::loadDetail) { Text("重试") }
                             }
@@ -438,7 +438,7 @@ internal fun VodTouchScreen(
                             }
                             if (eps.isNotEmpty()) {
                                 Spacer(Modifier.height(10.dp))
-                                Text("剧集 (${eps.size})", fontSize = 15.sp)
+                                Text("剧集 (${eps.size})", color = Color.White, fontSize = 15.sp)
                                 Spacer(Modifier.height(6.dp))
                                 EpisodeFlow(eps = eps, current = epIndex, onSelect = vm::selectEpisode)
                             }
@@ -466,7 +466,7 @@ internal fun VodTouchScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Text(detailError)
+                            Text(detailError, color = Color.White)
                             Spacer(Modifier.height(8.dp))
                             androidx.compose.material3.TextButton(onClick = vm::loadDetail) { Text("重试") }
                         }
@@ -495,7 +495,7 @@ internal fun VodTouchScreen(
                         }
                         if (eps.isNotEmpty()) {
                             Spacer(Modifier.height(10.dp))
-                            Text("剧集 (${eps.size})", fontSize = 15.sp)
+                            Text("剧集 (${eps.size})", color = Color.White, fontSize = 15.sp)
                             Spacer(Modifier.height(6.dp))
                             EpisodeFlow(eps = eps, current = epIndex, onSelect = vm::selectEpisode)
                         }

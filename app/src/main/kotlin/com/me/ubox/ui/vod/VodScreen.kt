@@ -2,6 +2,8 @@ package com.me.ubox.ui.vod
 
 import android.app.Activity
 import android.content.Context
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -67,6 +69,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -89,6 +93,7 @@ import com.me.ubox.ui.AppSnackbar
 import com.me.ubox.ui.components.ImmersiveSystemBarsEffect
 import com.me.ubox.ui.components.NetworkImage
 import com.me.ubox.ui.components.TvButton
+import com.me.ubox.ui.components.TvFocusable
 import com.me.ubox.ui.components.VideoSurfaceView
 import com.me.ubox.ui.components.pageFocusGuard
 import com.me.ubox.ui.dialogs.DanmuFullSettingDialog
@@ -436,231 +441,252 @@ private fun SmallLayout(
     onToggleFav: () -> Unit,
     onSwitchMenu: () -> Unit,
 ) {
-    Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        // ---- 左: 播放器 ----
-        Box(
-            modifier = Modifier
-                .weight(0.58f)
-                .fillMaxHeight()
-                .background(Color.Black)
-                .focusable()
-                .clickable { onFullscreen() }
-                .pageFocusGuard(),
-        ) {
-            VideoSurfaceView(
-                modifier = Modifier.fillMaxSize(),
-                aspectRatio = if (aspect > 0f) aspect else null,
-                scaleType = scaleType,
-                videoWidthPx = vw,
-                videoHeightPx = vh,
-                onSurfaceReady = { view -> vm.attachSurface(view.holder.surface) },
-                onSurfaceDispose = { vm.detachSurface() },
-            )
-            DanmakuLayer(modifier = Modifier.fillMaxSize())
-            // 顶部片名 / 集名
-            Text(
-                text = "${vm.title} · ${vm.epName()}",
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontSize = 16.sp,
+    val context = LocalContext.current
+    val g = groups.getOrNull(flagIndex)
+    val total = g?.eps?.size ?: 0
+    // 正序/倒序 + 分页 (TV 详情页本地状态, 不影响手机/平板与 ViewModel).
+    var reverse by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf(0) }
+    LaunchedEffect(flagIndex) { if (flagIndex >= 0) { page = 0; reverse = false } }
+    val PAGE_SIZE = 20
+    val paged = total > PAGE_SIZE
+    val pageCount = if (total <= 0) 0 else (total + PAGE_SIZE - 1) / PAGE_SIZE
+    val safePage = page.coerceIn(0, maxOf(0, pageCount - 1))
+    val ordered = remember(total, reverse) {
+        if (reverse) (0 until total).reversed().toList() else (0 until total).toList()
+    }
+    val pageItems = if (paged) ordered.drop(safePage * PAGE_SIZE).take(PAGE_SIZE) else ordered
+    var showDesc by remember { mutableStateOf(false) }
+    val des = com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_content").orEmpty()
+
+    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        Spacer(Modifier.height(10.dp))
+        // ===== 顶部: 圆角预览播放器 + 影视信息 (对照 NovaTV topLayout) =====
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 50.dp)) {
+            // 左侧: 圆角预览播放器 (比例 470:300, 对照 NovaTV previewPlayer / preview_player_round).
+            Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(12.dp)
-                    .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-            if (loading || buffering) {
-                CircularProgressIndicator(
-                    color = Color.White,
-                    strokeWidth = 3.dp,
-                    modifier = Modifier.align(Alignment.Center).size(44.dp),
-                )
-            }
-            if (error.isNotEmpty()) {
-                Text(
-                    text = error,
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    maxLines = 4,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                )
-            }
-            // 底部小控制条: 播放/暂停 + 进度 + 全屏
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .fillMaxWidth(0.32f)
+                    .aspectRatio(470f / 300f)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black)
+                    .focusable()
+                    .clickable { onFullscreen() }
+                    .pageFocusGuard(),
             ) {
-                TvButton(
-                    label = if (playing) "暂停" else "播放",
-                    icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    height = 40.dp,
-                    fontSize = 15,
-                    onTap = { vm.playOrPause() },
+                VideoSurfaceView(
+                    modifier = Modifier.fillMaxSize(),
+                    aspectRatio = if (aspect > 0f) aspect else null,
+                    scaleType = scaleType,
+                    videoWidthPx = vw,
+                    videoHeightPx = vh,
+                    onSurfaceReady = { view -> vm.attachSurface(view.holder.surface) },
+                    onSurfaceDispose = { vm.detachSurface() },
                 )
-                Spacer(Modifier.width(10.dp))
-                Text(fmtTime(positionMs), color = Color.White, fontSize = 13.sp)
-                Spacer(Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(3.dp)
-                        .background(Color.White.copy(alpha = 0.25f), RoundedCornerShape(2.dp)),
-                ) {
-                    val frac = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(frac)
-                            .background(com.me.ubox.ui.player.AccentBlue, RoundedCornerShape(2.dp)),
-                    )
+                DanmakuLayer(modifier = Modifier.fillMaxSize())
+                if (loading || buffering) {
+                    CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.align(Alignment.Center).size(38.dp))
                 }
-                Spacer(Modifier.width(8.dp))
-                Text(fmtTime(durationMs), color = Color.White, fontSize = 13.sp)
-                Spacer(Modifier.width(10.dp))
-                TvButton(
-                    label = "全屏",
-                    icon = Icons.Filled.Fullscreen,
-                    height = 40.dp,
-                    fontSize = 15,
-                    onTap = onFullscreen,
+                if (error.isNotEmpty()) {
+                    Text(error, color = Color.White, fontSize = 12.sp, maxLines = 4, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.align(Alignment.Center).padding(14.dp))
+                }
+                Text("${vm.title} · ${vm.epName()}", color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, modifier = Modifier.align(Alignment.TopStart).padding(8.dp).background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
+            }
+            Spacer(Modifier.width(20.dp))
+            // 右侧: 影视信息 (对照 NovaTV tvName / tvSite / tvYear / tvArea / tvType / tvActor / tvDirector / tvPlayUrl / tvDes).
+            Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                Text(vm.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 28.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(6.dp))
+                val metaSub = listOfNotNull(
+                    vm.siteName.takeIf { it.isNotEmpty() },
+                    com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_year").takeIf { !it.isNullOrEmpty() },
+                    com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_area").takeIf { !it.isNullOrEmpty() },
+                    com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_type").takeIf { !it.isNullOrEmpty() },
                 )
+                if (metaSub.isNotEmpty()) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        metaSub.forEach { Text(it, color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 1) }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                val actor = com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_actor").orEmpty()
+                if (actor.isNotEmpty()) {
+                    Text("演员: $actor", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(4.dp))
+                }
+                val director = com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_director").orEmpty()
+                if (director.isNotEmpty()) {
+                    Text("导演: $director", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(4.dp))
+                }
+                val playUrl = g?.urls?.getOrNull(epIndex).orEmpty()
+                if (playUrl.isNotEmpty()) {
+                    Text("播放地址: $playUrl", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.clickable {
+                        val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText(null, playUrl))
+                        AppSnackbar.show("已复制播放地址")
+                    }.padding(2.dp))
+                    Spacer(Modifier.height(4.dp))
+                }
+                if (des.isNotEmpty()) {
+                    Text("简介: $des", color = Color(0xBBFFFFFF), fontSize = 18.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.weight(1f))
+                // 四个彩色胶囊按钮 (对照 NovaTV button_detail_play / _quick_search / _sort / _collect).
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    NovaColorButton("全屏", Color(0xFFFF5F00), Icons.Filled.Fullscreen, onFullscreen)
+                    NovaColorButton("快速搜索", Color(0xFF1890FF), Icons.Filled.SwapHoriz, onSwitchMenu)
+                    NovaColorButton("简介", Color(0xFF90CA09), null) { showDesc = true }
+                    NovaColorButton(if (fav) "取消收藏" else "加入收藏", Color(0xFFFF0057), Icons.Filled.Favorite, onToggleFav)
+                }
             }
         }
-
-        // ---- 右: 信息面板 (影视信息 / 源 / 剧集) ----
-        Column(
-            modifier = Modifier
-                .weight(0.42f)
-                .fillMaxHeight()
-                .verticalScroll(rememberScrollState())
-                .padding(14.dp),
-        ) {
-            when {
-                detailLoading -> {
-                    Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(strokeWidth = 2.dp)
+        Spacer(Modifier.height(10.dp))
+        // ===== 源 / 线路标签 (对照 NovaTV mGridViewFlag) =====
+        if (groups.size > 1) {
+            LazyRow(modifier = Modifier.padding(horizontal = 50.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                itemsIndexed(groups) { i, it ->
+                    FlagChip(name = it.flag, selected = i == flagIndex, onClick = { vm.selectFlag(i) })
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        // ===== 正序/倒序 + 分页 (对照 NovaTV mSeriesGroupTv / mSeriesGroupView) =====
+        if (paged) {
+            Row(modifier = Modifier.padding(horizontal = 50.dp), verticalAlignment = Alignment.CenterVertically) {
+                NovaChip(if (reverse) "倒序" else "正序", false) { reverse = !reverse }
+                Spacer(Modifier.width(10.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    itemsIndexed((0 until pageCount).toList()) { p, _ ->
+                        val s = p * PAGE_SIZE + 1
+                        val e = minOf((p + 1) * PAGE_SIZE, total)
+                        NovaChip("$s-$e", p == safePage) { page = p }
                     }
                 }
-                detailError.isNotEmpty() -> {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                        Text(detailError)
-                        Spacer(Modifier.height(8.dp))
-                        TextButton(onClick = onReload) { Text("重试") }
-                        TextButton(onClick = onBack) { Text("返回") }
-                    }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        // ===== 剧集网格 (对照 NovaTV mGridView, 6 列) =====
+        when {
+            detailLoading -> {
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { CircularProgressIndicator(strokeWidth = 2.dp) }
+            }
+            detailError.isNotEmpty() -> {
+                Column(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(detailError, color = Color.White)
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = onReload) { Text("重试") }
+                    TextButton(onClick = onBack) { Text("返回") }
                 }
-                else -> {
-                    Row {
-                        val pic = vm.cover
-                        if (pic.isNotEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .width(112.dp)
-                                    .aspectRatio(3f / 4f)
-                                    .background(
-                                        MaterialTheme.colorScheme.surfaceContainerHighest,
-                                        RoundedCornerShape(8.dp),
-                                    ),
-                            ) {
-                                NetworkImage(
-                                    url = pic,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
-                            }
-                            Spacer(Modifier.width(12.dp))
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = vm.title,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 21.sp,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            MetaLine("备注", com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_remarks").orEmpty())
-                            MetaLine("年份", com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_year").orEmpty())
-                            MetaLine("地区", com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_area").orEmpty())
-                            MetaLine("类型", com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_type").orEmpty())
-                            MetaLine("来源", vm.siteName)
-                        }
+            }
+            else -> {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(6),
+                    modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 50.dp, vertical = 6.dp),
+                    contentPadding = PaddingValues(2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    itemsIndexed(pageItems) { _, realIdx ->
+                        val sel = realIdx == epIndex
+                        val name = g?.eps?.getOrNull(realIdx).orEmpty()
+                        NovaSeriesCell(name = name.ifEmpty { "第${realIdx + 1}集" }, selected = sel) { vm.selectEpisode(realIdx) }
                     }
-                    Spacer(Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        TvButton(
-                            label = if (fav) "已收藏" else "收藏",
-                            icon = if (fav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                            height = 44.dp,
-                            fontSize = 15,
-                            onTap = onToggleFav,
-                        )
-                        TvButton(
-                            label = if (switching) "换源中…" else "换源",
-                            icon = Icons.Filled.SwapHoriz,
-                            height = 44.dp,
-                            fontSize = 15,
-                            onTap = { if (!switching) onSwitchMenu() },
-                        )
-                    }
-                    val actor = com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_actor").orEmpty()
-                    if (actor.isNotEmpty()) {
-                        Spacer(Modifier.height(10.dp))
-                        Text("演员: $actor", fontSize = 14.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    }
-                    val director = com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_director").orEmpty()
-                    if (director.isNotEmpty()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text("导演: $director", fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
-                    val des = com.me.ubox.data.JsonUtil.optStringOrNull(vod, "vod_content").orEmpty()
-                    if (des.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "简介: $des",
-                            fontSize = 14.sp,
-                            maxLines = 6,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (groups.isNotEmpty()) {
-                        Spacer(Modifier.height(14.dp))
-                        Text("源", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Spacer(Modifier.height(6.dp))
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            itemsIndexed(groups) { i, g ->
-                                FlagChip(
-                                    name = g.flag,
-                                    selected = i == flagIndex,
-                                    onClick = { vm.selectFlag(i) },
-                                )
-                            }
-                        }
-                        val g = groups.getOrNull(flagIndex)
-                        if (g != null) {
-                            Spacer(Modifier.height(12.dp))
-                            Text("剧集 (${g.urls.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Spacer(Modifier.height(6.dp))
-                            EpisodeFlow(
-                                eps = g.eps,
-                                current = epIndex,
-                                onSelect = { vm.selectEpisode(it) },
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
                 }
             }
         }
     }
+    // 简介弹窗 (对照 NovaTV DescDialog).
+    if (showDesc) {
+        AlertDialog(
+            onDismissRequest = { showDesc = false },
+            title = { Text("简介", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = { Text(des.ifEmpty { "暂无简介" }, color = Color.White, fontSize = 15.sp) },
+            confirmButton = { TextButton(onClick = { showDesc = false }) { Text("关闭") } },
+        )
+    }
 }
+
+// ---------------------------------------------------------------- TV 详情页专用: 彩色胶囊按钮 / 分页标签 / 剧集格
+
+/** 四色胶囊按钮 (对照 NovaTV button_detail_*): 橙=全屏 / 蓝=快速搜索 / 绿=简介 / 粉=收藏. */
+@Composable
+private fun NovaColorButton(label: String, color: Color, icon: ImageVector?, onTap: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    TvFocusable(
+        onTap = onTap,
+        modifier = Modifier.height(40.dp),
+        radius = 20.dp,
+        borderColor = Color.White,
+        showBorder = true,
+        onFocusChanged = { focused = it },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .background(color.copy(alpha = if (focused) 1f else 0.85f), RoundedCornerShape(20.dp))
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (icon != null) {
+                    Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(label, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+        }
+    }
+}
+
+/** 正序/倒序 + 分页标签 (对照 NovaTV shape_source_series_focus). */
+@Composable
+private fun NovaChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    TvFocusable(
+        onTap = onClick,
+        modifier = Modifier.height(40.dp),
+        radius = 18.dp,
+        borderColor = Color.White,
+        showBorder = true,
+        onFocusChanged = { focused = it },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .background(if (selected) com.me.ubox.ui.player.AccentBlue else Color(0x6C3D3D3D), RoundedCornerShape(18.dp))
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(label, color = Color.White, fontSize = 15.sp, maxLines = 1)
+        }
+    }
+}
+
+/** 剧集格 (对照 NovaTV item_series / shape_source_series_focus). */
+@Composable
+private fun NovaSeriesCell(name: String, selected: Boolean, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    TvFocusable(
+        onTap = onClick,
+        modifier = Modifier.height(44.dp),
+        radius = 8.dp,
+        borderColor = Color.White,
+        showBorder = true,
+        onFocusChanged = { focused = it },
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .background(if (selected) com.me.ubox.ui.player.AccentBlue else Color(0x6C3D3D3D), RoundedCornerShape(8.dp))
+                .padding(horizontal = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(name, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
 
 // ---------------------------------------------------------------- 全屏态
 
@@ -1043,7 +1069,7 @@ private fun EpisodePickerDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("选集", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text("选集", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 TextButton(onClick = onDismiss) { Text("关闭") }
             }
         },

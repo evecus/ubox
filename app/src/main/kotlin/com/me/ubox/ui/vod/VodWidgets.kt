@@ -59,7 +59,7 @@ import com.me.ubox.ui.player.fmtTime
 @Composable
 internal fun MetaLine(label: String, value: String) {
     if (value.isEmpty()) return
-    Text("$label: $value", fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Text("$label: $value", color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
 
 /** 源 (线路) 标签: 选中 = 蓝字 + 蓝色下划线 (对照 NovaBox item_series_flag). */
@@ -164,6 +164,7 @@ internal fun VodInfoCard(
             }
             Text(
                 text = vm.title,
+                color = Color.White,
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp,
                 maxLines = 2,
@@ -190,6 +191,7 @@ internal fun VodInfoCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = vm.title,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         maxLines = 2,
@@ -214,12 +216,12 @@ internal fun VodInfoCard(
         val actor = JsonUtil.optStringOrNull(vod, "vod_actor").orEmpty()
         if (actor.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
-            Text("演员: $actor", fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text("演员: $actor", color = Color.White, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
         val director = JsonUtil.optStringOrNull(vod, "vod_director").orEmpty()
         if (director.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
-            Text("导演: $director", fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("导演: $director", color = Color.White, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         val des = JsonUtil.optStringOrNull(vod, "vod_content").orEmpty()
         if (des.isNotEmpty()) {
@@ -229,7 +231,7 @@ internal fun VodInfoCard(
                 fontSize = 13.sp,
                 maxLines = if (compact) 4 else 6,
                 overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color.White,
             )
         }
     }

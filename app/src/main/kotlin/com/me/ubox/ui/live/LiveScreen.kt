@@ -359,6 +359,7 @@ private fun LiveInfoBar(vm: LiveViewModel, tablet: Boolean) {
     ) {
         Text(
             text = text,
+            color = Color.White,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             fontWeight = FontWeight.Bold,
