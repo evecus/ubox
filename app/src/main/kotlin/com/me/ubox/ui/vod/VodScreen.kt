@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -495,15 +496,17 @@ private fun SmallLayout(
         // ===== 顶部: 圆角预览播放器 + 影视信息 (对照 NovaTV topLayout) =====
         Row(modifier = Modifier.fillMaxWidth().height(topH).padding(horizontal = 50.dp)) {
             // 左侧: 圆角预览播放器 (比例 470:300, 对照 NovaTV previewPlayer / preview_player_round).
+            TvFocusable(
+                onTap = onFullscreen,
+                modifier = Modifier.width(playerW).fillMaxHeight(),
+                radius = 12.dp,
+                focusScale = 1.0f,
+            ) {
             Box(
                 modifier = Modifier
-                    .width(playerW)
-                    .fillMaxHeight()
+                    .fillMaxSize()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black)
-                    .focusable()
-                    .clickable { onFullscreen() }
-                    .pageFocusGuard(),
+                    .background(Color.Black),
             ) {
                 VideoSurfaceView(
                     modifier = Modifier.fillMaxSize(),
@@ -522,6 +525,7 @@ private fun SmallLayout(
                     Text(error, color = Color.White, fontSize = 12.sp, maxLines = 4, textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.align(Alignment.Center).padding(14.dp))
                 }
                 Text("${vm.title} · ${vm.epName()}", color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, modifier = Modifier.align(Alignment.TopStart).padding(8.dp).background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
+            }
             }
             Spacer(Modifier.width(20.dp))
             // 右侧: 影视信息 (对照 NovaTV tvName / tvSite / tvYear / tvArea / tvType / tvActor / tvDirector / tvPlayUrl / tvDes).
@@ -578,7 +582,9 @@ private fun SmallLayout(
         if (groups.size > 1) {
             LazyRow(modifier = Modifier.padding(horizontal = 50.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 itemsIndexed(groups) { i, it ->
-                    FlagChip(name = it.flag, selected = i == flagIndex, onClick = { vm.selectFlag(i) })
+                    TvFocusable(onTap = { vm.selectFlag(i) }, radius = 8.dp, focusScale = 1.0f) {
+                        FlagChip(name = it.flag, selected = i == flagIndex, onClick = { vm.selectFlag(i) }, interactive = false)
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -724,6 +730,7 @@ private fun NovaSeriesCell(name: String, selected: Boolean, onClick: () -> Unit)
 
 // ---------------------------------------------------------------- 全屏态
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FullscreenPlayer(
     vm: VodViewModel,
@@ -921,7 +928,10 @@ private fun FullscreenPlayer(
                     .background(Color.Black.copy(alpha = 0.55f))
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     TvButton(
                         label = if (playing) "暂停" else "播放",
                         icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
@@ -1112,13 +1122,20 @@ private fun EpisodePickerDialog(
                 if (groups.size > 1) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         itemsIndexed(groups) { i, item ->
-                            FlagChip(name = item.flag, selected = i == flagIndex, onClick = { onSelectFlag(i) })
+                            TvFocusable(onTap = { onSelectFlag(i) }, radius = 8.dp, focusScale = 1.0f) {
+                                FlagChip(name = item.flag, selected = i == flagIndex, onClick = { onSelectFlag(i) }, interactive = false)
+                            }
                         }
                     }
                     Spacer(Modifier.height(10.dp))
                 }
                 if (g != null) {
+                    // 先滚到当前集附近, 再让它 autofocus (懒网格里未组合的项无法获得焦点).
+                    val pickState = rememberLazyGridState(
+                        initialFirstVisibleItemIndex = maxOf(0, epIndex - columns),
+                    )
                     LazyVerticalGrid(
+                        state = pickState,
                         columns = GridCells.Fixed(columns),
                         modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
                         contentPadding = PaddingValues(2.dp),
@@ -1127,9 +1144,15 @@ private fun EpisodePickerDialog(
                     ) {
                         itemsIndexed(g.eps) { i, name ->
                             val selected = i == epIndex
+                            TvFocusable(
+                                onTap = { onSelectEp(i) },
+                                modifier = Modifier.height(48.dp),
+                                autofocus = selected,
+                                radius = 8.dp,
+                            ) {
                             Box(
                                 modifier = Modifier
-                                    .height(48.dp)
+                                    .fillMaxSize()
                                     .background(
                                         color = if (selected) {
                                             com.me.ubox.ui.player.AccentBlue
@@ -1138,7 +1161,6 @@ private fun EpisodePickerDialog(
                                         },
                                         shape = RoundedCornerShape(8.dp),
                                     )
-                                    .clickable(onClick = { onSelectEp(i) })
                                     .padding(horizontal = 4.dp),
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -1149,6 +1171,7 @@ private fun EpisodePickerDialog(
                                     fontSize = if (selected) 15.sp else 14.sp,
                                     color = Color.White,
                                 )
+                            }
                             }
                         }
                     }

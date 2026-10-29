@@ -64,10 +64,10 @@ internal fun MetaLine(label: String, value: String) {
 
 /** 源 (线路) 标签: 选中 = 蓝字 + 蓝色下划线 (对照 NovaBox item_series_flag). */
 @Composable
-internal fun FlagChip(name: String, selected: Boolean, onClick: () -> Unit) {
+internal fun FlagChip(name: String, selected: Boolean, onClick: () -> Unit, interactive: Boolean = true) {
     Column(
         modifier = Modifier
-            .clickable(onClick = onClick)
+            .then(if (interactive) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

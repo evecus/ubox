@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -426,7 +427,10 @@ private fun GroupList(
     large: Boolean,
     onPasswordNeeded: (Int) -> Unit,
 ) {
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
+    val groupState = rememberLazyListState(
+        initialFirstVisibleItemIndex = maxOf(0, groups.indexOfFirst { it.groupIndex == selectedGroupIndex } - 3),
+    )
+    LazyColumn(state = groupState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
         items(groups, key = { it.groupIndex }) { g ->
             LiveListItem(
                 text = g.groupName,
@@ -453,7 +457,12 @@ private fun ChannelList(
 ) {
     val selectedGroupIndex by vm.selectedGroupIndex.collectAsStateWithLifecycle()
     val channels = vm.channelsOf(selectedGroupIndex)
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
+    // 已选频道在长列表靠后时, 懒列表里它根本没有被组合, autofocus 不会发生 -> 面板里没有任何焦点,
+    // 方向键无法移动. 先把列表滚到已选频道附近, 让该项被组合后再 autofocus.
+    val channelState = rememberLazyListState(
+        initialFirstVisibleItemIndex = maxOf(0, channels.indexOfFirst { it.channelIndex == selectedChannelIndex } - 3),
+    )
+    LazyColumn(state = channelState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
         items(channels, key = { it.channelNum }) { c ->
             LiveListItem(
                 num = "${c.channelNum}",
