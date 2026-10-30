@@ -17,44 +17,96 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * 解码方式设置 (设置页 → 播放 → 解码方式), 点播与直播共用:
- *   auto = 自动: 先硬解, 硬解失败 (解码器相关错误) 再自动切软解重试;
- *   hard = 硬解: 视频只用硬件解码器, 没有任何回退 (没有硬解器/硬解失败即报错);
- *   soft = 软解: 视频只用软件解码器, 没有任何回退.
- * 只约束 **视频** 解码器. 音频解码器在 Android 上几乎都是软件实现 (c2.android.*),
- * 若音频也按"硬解"过滤会导致没有声音, 所以音频始终走系统默认选择.
+ * 解码方式设置 (设置页 → 播放 → 解码方式), 点播与直播共用.
+ *
+ * 每项 = 播放内核 + 解码策略:
+ *   ExoPlayer (media3):
+ *     auto      自动: 先硬解, 硬解失败 (解码器相关错误) 再自动切软解重试;
+ *     hard      硬解: 视频只用硬件解码器, 无回退;
+ *     soft      软解: 视频只用软件解码器, 无回退.
+ *   IjkPlayer (ijkplayer, ffmpeg):
+ *     ijk_auto       自动: 先 MediaCodec 硬解, 失败自动重建为软解重试;
+ *     ijk_hard       硬解: MediaCodec 硬解 (含 H.265), 无回退;
+ *     ijk_hard_h264  硬解(不含 H.265): H.264 走 MediaCodec, H.265 走软解
+ *                    (部分盒子 HEVC 硬解花屏/黑屏时用它);
+ *     ijk_soft       软解: 纯 ffmpeg 软件解码, 兼容性最好, 高清源占 CPU.
+ *
+ * ExoPlayer 三项只约束 **视频** 解码器. 音频解码器在 Android 上几乎都是软件实现
+ * (c2.android.*), 若音频也按"硬解"过滤会导致没有声音, 所以音频始终走系统默认选择.
  */
 object DecoderPrefs {
 
+    // ---- ExoPlayer ----
     const val AUTO = "auto"
     const val HARD = "hard"
     const val SOFT = "soft"
 
+    // ---- IjkPlayer ----
+    const val IJK_AUTO = "ijk_auto"
+    const val IJK_HARD = "ijk_hard"
+    /** 硬解但排除 H.265 (HEVC 走软解). */
+    const val IJK_HARD_H264 = "ijk_hard_h264"
+    const val IJK_SOFT = "ijk_soft"
+
     private const val KEY = "decoder_mode"
 
-    private val _mode by lazy { MutableStateFlow(Ctx.prefs.getString(KEY, AUTO) ?: AUTO) }
+    /** 设置页选项顺序 (先 ExoPlayer 后 IjkPlayer, 每组 自动/硬解/软解). */
+    private val ORDER = listOf(AUTO, HARD, SOFT, IJK_AUTO, IJK_HARD, IJK_HARD_H264, IJK_SOFT)
+
+    private val _mode by lazy { MutableStateFlow(normalize(Ctx.prefs.getString(KEY, AUTO))) }
 
     /** 当前解码方式 (设置页观察). */
     val mode: StateFlow<String> get() = _mode.asStateFlow()
 
     val current: String get() = _mode.value
 
+    /** 全部可选项 (设置页单选列表). */
+    fun options(): List<String> = ORDER
+
+    /** 该方式是否走 IjkPlayer 内核. */
+    fun isIjk(value: String = current): Boolean = value.startsWith("ijk_")
+
+    /** 内核名 (错误提示/关于页展示). */
+    fun kernelName(value: String = current): String = if (isIjk(value)) "IjkPlayer" else "ExoPlayer"
+
+    private fun normalize(value: String?): String = if (value in ORDER) value!! else AUTO
+
     fun setMode(value: String) {
-        val v = if (value == HARD || value == SOFT) value else AUTO
+        val v = normalize(value)
         _mode.value = v
         Ctx.prefs.edit().putString(KEY, v).apply()
     }
 
     fun label(value: String): String = when (value) {
-        HARD -> "硬解"
-        SOFT -> "软解"
-        else -> "自动"
+        HARD -> "硬解 (ExoPlayer)"
+        SOFT -> "软解 (ExoPlayer)"
+        IJK_AUTO -> "IJK 自动 (硬解→软解)"
+        IJK_HARD -> "IJK 硬解"
+        IJK_HARD_H264 -> "IJK 硬解 (不含 H.265)"
+        IJK_SOFT -> "IJK 软解"
+        else -> "自动 (ExoPlayer)"
     }
 
+    /** 一句话说明 (设置页列表副标题, 保持单行可读). */
     fun description(value: String): String = when (value) {
-        HARD -> "只用硬件解码, 无回退 (失败即报错)"
-        SOFT -> "只用软件解码, 无回退 (失败即报错)"
-        else -> "先硬解, 播放失败再自动切换软解"
+        HARD -> "ExoPlayer 只用硬解, 无回退"
+        SOFT -> "ExoPlayer 只用软解, 无回退"
+        IJK_AUTO -> "IJK 先硬解, 失败自动切软解"
+        IJK_HARD -> "IJK 硬解 (含 H.265), 无回退"
+        IJK_HARD_H264 -> "IJK 硬解 H.264, H.265 走软解"
+        IJK_SOFT -> "IJK 纯软解, 兼容性最好"
+        else -> "ExoPlayer 先硬解, 失败自动切软解"
+    }
+
+    /** 详细说明 (设置页主项副标题). */
+    fun detail(value: String): String = when (value) {
+        HARD -> "只用硬件解码器, 失败即报错"
+        SOFT -> "只用软件解码器, 失败即报错"
+        IJK_AUTO -> "MediaCodec 硬解, 失败时重建为纯软解实例重试"
+        IJK_HARD -> "只用 MediaCodec 硬解 (含 H.265), 失败即报错"
+        IJK_HARD_H264 -> "H.264 走 MediaCodec, H.265 走软解 (设备 HEVC 硬解花屏时用)"
+        IJK_SOFT -> "只用 ffmpeg 软件解码, 兼容性最好, 高清源更耗 CPU"
+        else -> "先硬件解码, 解码失败自动切换软解重试"
     }
 }
 

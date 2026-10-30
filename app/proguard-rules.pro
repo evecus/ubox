@@ -120,3 +120,10 @@
 -keepclassmembers class com.mobile.** { *; }
 -keep class com.whl.quickjs.** { *; }
 -keep class com.me.ubox.engine.** { *; }
+
+# ---------------------------------------------------------------- IjkPlayer
+# ijk 的 Java 层通过 JNI 绑定 native 符号, 类名/方法名被改名后 so 反射不到 (崩溃无堆栈).
+-keep class tv.danmaku.ijk.media.player.** { *; }
+-keep interface tv.danmaku.ijk.media.player.** { *; }
+-keepclassmembers class tv.danmaku.ijk.media.player.** { *; }
+-keep class tv.danmaku.ijk.media.widget.** { *; }

@@ -808,7 +808,7 @@ private fun FullscreenPlayer(
     fun commitSeek() {
         val t = seekTarget ?: return
         vm.seekTo(t)
-        if (!vm.player.isPlaying) vm.play()
+        if (!vm.isPlayingNow) vm.play()
         seekTarget = null
         scope.launch {
             delay(700)

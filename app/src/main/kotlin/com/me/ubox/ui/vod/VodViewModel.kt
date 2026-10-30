@@ -2,11 +2,6 @@ package com.me.ubox.ui.vod
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
 import com.me.ubox.data.FavoriteItem
 import com.me.ubox.data.Favorites
 import com.me.ubox.data.History
@@ -23,8 +18,11 @@ import com.me.ubox.danmaku.DanmakuLoadResult
 import com.me.ubox.danmaku.DanmakuManager
 import com.me.ubox.danmaku.DanmuSettings
 import com.me.ubox.engine.EngineClient
-import com.me.ubox.player.DecoderController
-import com.me.ubox.player.PlayerHeaders
+import com.me.ubox.player.DecoderPrefs
+import com.me.ubox.player.PlayRequest
+import com.me.ubox.player.PlayerEngine
+import com.me.ubox.player.PlayerEngines
+import com.me.ubox.player.PlayerListener
 import com.me.ubox.player.inferMimeType
 import com.me.ubox.ui.AppSnackbar
 import com.me.ubox.ui.player.PlayerOptions
@@ -95,10 +93,19 @@ class VodViewModel(
 
     // ---------------------------------------------------------------- 播放器
 
-    private val decoder = DecoderController()
+    /**
+     * 播放内核: 按设置页"解码方式"选择 ExoPlayer 或 IjkPlayer (PlayerEngines.create),
+     * 上层只依赖 [PlayerEngine] 接口.
+     * var: 设置页换内核 (ExoPlayer ↔ IjkPlayer) 时整体重建 (见 [watchDecoderMode]).
+     */
+    private var engine: PlayerEngine = PlayerEngines.create()
 
-    @androidx.annotation.OptIn(UnstableApi::class)
-    val player: ExoPlayer = decoder.createPlayer()
+    /** 当前媒体项 (换内核后按它续播) 与已挂载的表面. */
+    private var currentRequest: PlayRequest? = null
+    private var surface: android.view.Surface? = null
+
+    /** 最近一次创建内核时的解码方式 (用于识别"内核类别是否变了"). */
+    private var currentMode = DecoderPrefs.current
 
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
@@ -171,64 +178,91 @@ class VodViewModel(
         return if (n.isNullOrEmpty()) "第${index + 1}集" else n
     }
 
+    /** 内核事件 → 界面状态 (换内核时挂到新实例上, 所以单独提出来). */
+    private val engineListener = object : PlayerListener {
+        override fun onPlayingChanged(playing: Boolean) {
+            _playing.value = playing
+            DanmakuManager.setPlaying(playing)
+        }
+
+        override fun onBuffering(buffering: Boolean) {
+            _buffering.value = buffering
+            DanmakuManager.setBuffering(buffering)
+        }
+
+        override fun onReady() {
+            // 起始位置 (续播/片头) 由内核在就绪后自行 seek, 这里只同步标志与时长.
+            _durationMs.value = engine.duration
+            if (pendingSeekMs >= 0) {
+                pendingSeekMs = -1
+                restoreDone = true
+            }
+            startSkipApplied = true
+        }
+
+        override fun onEnded() {
+            playNext()
+        }
+
+        override fun onError(code: Int, message: String) {
+            _loading.value = false
+            _error.value = message
+        }
+
+        override fun onVideoSize(width: Int, height: Int, pixelRatio: Float) {
+            if (width > 0 && height > 0) {
+                _videoWidth.value = width
+                _videoHeight.value = height
+                _videoAspectRatio.value = width.toFloat() * pixelRatio / height
+            }
+        }
+
+        override fun onNotice(message: String) {
+            AppSnackbar.show(message)
+        }
+    }
+
     init {
-        player.setPlaybackSpeed(cfg0.speed)
-        player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                _playing.value = isPlaying
-                DanmakuManager.setPlaying(isPlaying)
-            }
-
-            override fun onPlaybackStateChanged(state: Int) {
-                _buffering.value = state == Player.STATE_BUFFERING
-                DanmakuManager.setBuffering(state == Player.STATE_BUFFERING)
-                if (state == Player.STATE_READY) {
-                    _durationMs.value = player.duration.coerceAtLeast(0L)
-                    if (pendingSeekMs >= 0) {
-                        player.seekTo(pendingSeekMs)
-                        pendingSeekMs = -1
-                        restoreDone = true
-                        startSkipApplied = true
-                    } else if (!startSkipApplied) {
-                        startSkipApplied = true
-                        val st = _skipStartSec.value
-                        if (st > 0) player.seekTo(st * 1000L)
-                    }
-                } else if (state == Player.STATE_ENDED) {
-                    playNext()
-                }
-            }
-
-            override fun onPlayerError(error: PlaybackException) {
-                if (decoder.onPlayerError(player, error)) return
-                _loading.value = false
-                val cause = generateSequence<Throwable>(error) { it.cause }.last()
-                _error.value = "播放失败: ${error.errorCodeName}\n" +
-                    "${cause.javaClass.simpleName}: ${cause.message ?: ""}\n" +
-                    "解码方式: ${decoder.describe()}"
-            }
-
-            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-                if (decoder.onTracks(player, tracks) ==
-                    DecoderController.TracksCheck.UNSUPPORTED
-                ) {
-                    player.stop()
-                    _loading.value = false
-                    _error.value = decoder.unsupportedMessage()
-                }
-            }
-
-            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                if (videoSize.width > 0 && videoSize.height > 0) {
-                    _videoWidth.value = videoSize.width
-                    _videoHeight.value = videoSize.height
-                    _videoAspectRatio.value =
-                        videoSize.width.toFloat() * videoSize.pixelWidthHeightRatio / videoSize.height
-                }
-            }
-        })
+        engine.setSpeed(cfg0.speed)
+        engine.listener = engineListener
+        watchDecoderMode()
         startPolling()
         loadDetail()
+    }
+
+    /**
+     * 设置页改了解码方式: 换内核类别 (ExoPlayer ↔ IjkPlayer) 时无法在实例上改,
+     * 释放旧内核 → 建新内核 → 从当前位置续播同一地址, 让设置立即生效.
+     * 同一内核内切换 (如 IJK 硬解 → IJK 软解) 下次 open 即生效, 不打断当前播放.
+     */
+    private fun watchDecoderMode() {
+        viewModelScope.launch {
+            DecoderPrefs.mode.collect { mode ->
+                if (mode == currentMode) return@collect
+                val crossKernel = DecoderPrefs.isIjk(mode) != DecoderPrefs.isIjk(currentMode)
+                currentMode = mode
+                if (!crossKernel) return@collect
+                rebuildEngine()
+            }
+        }
+    }
+
+    private fun rebuildEngine() {
+        val req = currentRequest ?: return
+        val pos = engine.currentPosition
+        val wasPlaying = engine.isPlaying
+        engine.listener = null
+        engine.release()
+        engine = PlayerEngines.create()
+        engine.listener = engineListener
+        engine.setSurface(surface)
+        engine.setSpeed(if (_boosting.value) PlayerOptions.BOOST_SPEED else _speed.value)
+        // 换内核不重走片头/续播逻辑, 直接从当前位置继续.
+        pendingSeekMs = -1
+        startSkipApplied = true
+        _error.value = ""
+        engine.open(req.copy(startMs = pos))
+        if (wasPlaying) engine.play()
     }
 
     // ================= 详情加载 =================
@@ -317,16 +351,23 @@ class VodViewModel(
         }
         startDanmaku(info.danmaku)
         try {
-            PlayerHeaders.current = info.headers
-            val mediaItem = MediaItem.Builder()
-                .setUri(info.url)
-                .apply { inferMimeType(info.url)?.let { setMimeType(it) } }
-                .build()
-            decoder.newItem()
-            player.setMediaItem(mediaItem)
-            pendingSeekMs = restorePos.toLong()
-            player.prepare()
-            if (startPlay) player.play()
+            // 起始位置: 优先续播, 其次片头跳过. 内核就绪后自行 seek.
+            val startMs = when {
+                restorePos > 0 -> restorePos.toLong()
+                _skipStartSec.value > 0 -> _skipStartSec.value * 1000L
+                else -> 0L
+            }
+            pendingSeekMs = if (restorePos > 0) restorePos.toLong() else -1L
+            val request = PlayRequest(
+                url = info.url,
+                headers = info.headers,
+                mimeType = inferMimeType(info.url),
+                startMs = startMs,
+                live = false,
+            )
+            currentRequest = request
+            engine.open(request)
+            if (startPlay) engine.play()
             _loading.value = false
         } catch (e: Exception) {
             _loading.value = false
@@ -382,28 +423,31 @@ class VodViewModel(
 
     // ================= 播放控制 =================
 
-    fun play() { player.play() }
+    fun play() { engine.play() }
 
-    fun pause() { player.pause() }
+    fun pause() { engine.pause() }
 
     fun playOrPause() {
-        if (player.isPlaying) player.pause() else player.play()
+        if (engine.isPlaying) engine.pause() else engine.play()
     }
 
-    val positionNow: Long get() = player.currentPosition.coerceAtLeast(0L)
-    val durationNow: Long get() = player.duration.coerceAtLeast(0L)
+    val positionNow: Long get() = engine.currentPosition
+    val durationNow: Long get() = engine.duration
+
+    /** 是否正在播放 (遥控器 seek 提交后补一次播放用). */
+    val isPlayingNow: Boolean get() = engine.isPlaying
 
     fun seekBy(seconds: Int) {
-        val dur = player.duration.coerceAtLeast(0L)
-        var target = player.currentPosition + seconds * 1000L
+        val dur = engine.duration
+        var target = engine.currentPosition + seconds * 1000L
         if (target < 0) target = 0
         if (dur > 0 && target > dur) target = dur
-        player.seekTo(target)
+        engine.seekTo(target)
         _positionMs.value = target
     }
 
     fun seekTo(ms: Long) {
-        player.seekTo(ms)
+        engine.seekTo(ms)
         _positionMs.value = ms
     }
 
@@ -417,7 +461,7 @@ class VodViewModel(
 
     fun setSpeed(v: Float) {
         _speed.value = v
-        if (!_boosting.value) player.setPlaybackSpeed(v)
+        if (!_boosting.value) engine.setSpeed(v)
         persistConfig()
     }
 
@@ -427,14 +471,14 @@ class VodViewModel(
     }
 
     fun markSkipStart() {
-        _skipStartSec.value = (player.currentPosition / 1000L).toInt().coerceAtLeast(0)
+        _skipStartSec.value = (engine.currentPosition / 1000L).toInt().coerceAtLeast(0)
         persistConfig()
     }
 
     fun markSkipEnd() {
-        val dur = player.duration.coerceAtLeast(0L)
+        val dur = engine.duration
         if (dur <= 0) return
-        _skipEndSec.value = ((dur - player.currentPosition) / 1000L).toInt().coerceAtLeast(0)
+        _skipEndSec.value = ((dur - engine.currentPosition) / 1000L).toInt().coerceAtLeast(0)
         persistConfig()
     }
 
@@ -445,15 +489,15 @@ class VodViewModel(
     }
 
     fun boostStart() {
-        if (_boosting.value || !player.isPlaying) return
+        if (_boosting.value || !engine.isPlaying) return
         _boosting.value = true
-        player.setPlaybackSpeed(PlayerOptions.BOOST_SPEED)
+        engine.setSpeed(PlayerOptions.BOOST_SPEED)
     }
 
     fun boostEnd() {
         if (!_boosting.value) return
         _boosting.value = false
-        player.setPlaybackSpeed(_speed.value)
+        engine.setSpeed(_speed.value)
     }
 
     // ================= 弹幕 =================
@@ -549,13 +593,13 @@ class VodViewModel(
         pollJob = viewModelScope.launch {
             while (true) {
                 delay(200)
-                val pos = player.currentPosition.coerceAtLeast(0L)
+                val pos = engine.currentPosition
                 _positionMs.value = pos
-                val dur = player.duration.coerceAtLeast(0L)
+                val dur = engine.duration
                 _durationMs.value = dur
-                _bufferedMs.value = player.bufferedPosition.coerceAtLeast(0L)
+                _bufferedMs.value = engine.bufferedPosition
                 checkSkipEnd(pos, dur)
-                DanmakuManager.syncPosition(pos, player.isPlaying)
+                DanmakuManager.syncPosition(pos, engine.isPlaying)
                 maybeSaveProgress(pos)
             }
         }
@@ -580,7 +624,7 @@ class VodViewModel(
         if (lastSavedMs > 0 && now - lastSaveAt < 10_000) return
         lastSaveAt = now
         lastSavedMs = ms.toInt()
-        saveProgress(ms.toInt(), player.duration.coerceAtLeast(0L).toInt())
+        saveProgress(ms.toInt(), engine.duration.toInt())
     }
 
     private fun saveProgress(posMs: Int, durMs: Int) {
@@ -603,22 +647,27 @@ class VodViewModel(
     // ================= 生命周期 =================
 
     fun attachSurface(surface: android.view.Surface) {
-        player.setVideoSurface(surface)
+        this.surface = surface
+        engine.setSurface(surface)
     }
 
     fun detachSurface() {
-        player.setVideoSurface(null)
+        this.surface = null
+        engine.setSurface(null)
     }
+
+    /** 当前内核 + 解码方式 (错误提示/调试用). */
+    fun engineInfo(): String = engine.describe()
 
     override fun onCleared() {
         pollJob?.cancel()
         EngineClient.setPlaySource("")
-        val pos = player.currentPosition.toInt()
-        if (pos > 0) saveProgress(pos, player.duration.coerceAtLeast(0L).toInt())
+        val pos = engine.currentPosition.toInt()
+        if (pos > 0) saveProgress(pos, engine.duration.toInt())
         danmakuJob?.cancel()
         DanmakuManager.reset()
         DanmakuManager.detachAll()
-        player.release()
+        engine.release()
         super.onCleared()
     }
 }

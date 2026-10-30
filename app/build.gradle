@@ -102,6 +102,14 @@ dependencies {
     // 播放走 OkHttp (信任所有证书 + 共享 DNS + IDN 域名), 对齐原版 mpv 不校验 TLS 的行为.
     implementation "androidx.media3:media3-datasource-okhttp:1.5.1"
 
+    // IjkPlayer (ijkplayer): 设置页"解码方式"选 IJK 系列时使用.
+    // 与 ExoPlayer 并存: 支持 FLV/RTMP 等 ExoPlayer 不支持的容器, 并可纯软解兜底.
+    // 只引 armeabi-v7a / arm64-v8a 两个 ABI (与 defaultConfig.ndk.abiFilters 一致);
+    // 若把 abiFilters 改成 x86, 需同时补 ijkplayer-x86 / ijkplayer-x86_64.
+    implementation "tv.danmaku.ijk.media:ijkplayer-java:0.8.8"
+    implementation "tv.danmaku.ijk.media:ijkplayer-armv7a:0.8.8"
+    implementation "tv.danmaku.ijk.media:ijkplayer-arm64:0.8.8"
+
     implementation "androidx.collection:collection:1.4.0"
 
     // 弹幕大师 (Bilibili DanmakuFlameMaster), 与原版 UBox 同一依赖;

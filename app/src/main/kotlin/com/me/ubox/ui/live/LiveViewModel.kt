@@ -1,20 +1,14 @@
 package com.me.ubox.ui.live
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import com.me.ubox.data.Ctx
 import com.me.ubox.data.live.LiveChannelGroup
 import com.me.ubox.data.live.LiveChannelItem
 import com.me.ubox.data.live.LiveStore
-import com.me.ubox.player.PlayerDataSourceFactory
-import com.me.ubox.player.PlayerHeaders
+import com.me.ubox.player.PlayRequest
+import com.me.ubox.player.PlayerEngine
+import com.me.ubox.player.PlayerEngines
+import com.me.ubox.player.PlayerListener
 import com.me.ubox.player.inferMimeType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -66,12 +60,20 @@ class LiveViewModel : ViewModel() {
     private var changeSourceTimes = 0
     private var needManualPlay = false
 
-    // ---- 播放器 (ExoPlayer) ----
-    /** 解码方式 (设置页 → 解码方式): 硬解 / 软解 / 自动 (先硬后软). */
-    private val decoder = com.me.ubox.player.DecoderController()
+    // ---- 播放器 ----
+    /**
+     * 播放内核: 按设置页"解码方式"选择 ExoPlayer 或 IjkPlayer.
+     * 直播多为 flv/rtmp/m3u8, IJK 对 flv/rtmp 支持更好 (ExoPlayer 不支持 flv).
+     * var: 设置页换内核 (ExoPlayer ↔ IjkPlayer) 时整体重建 (见 [watchDecoderMode]).
+     */
+    private var engine: PlayerEngine = PlayerEngines.create()
 
-    @androidx.annotation.OptIn(UnstableApi::class)
-    val player: ExoPlayer = decoder.createPlayer()
+    /** 当前媒体项 (换内核后按它重连) 与已挂载的表面. */
+    private var currentRequest: PlayRequest? = null
+    private var surface: android.view.Surface? = null
+
+    /** 最近一次创建内核时的解码方式. */
+    private var currentMode = com.me.ubox.player.DecoderPrefs.current
 
     private val _playing = MutableStateFlow(false)
     val playing: StateFlow<Boolean> = _playing.asStateFlow()
@@ -121,55 +123,85 @@ class LiveViewModel : ViewModel() {
 
     private var initialized = false
 
+    /** 内核事件 → 界面状态. */
+    private val engineListener = object : PlayerListener {
+        override fun onPlayingChanged(playing: Boolean) {
+            _playing.value = playing
+            if (playing) {
+                // 对照 STATE_PLAYING: 取消换源任务并重置失败计数
+                cancelTimers()
+                changeSourceTimes = 0
+            }
+        }
+
+        override fun onBuffering(buffering: Boolean) {
+            _buffering.value = buffering
+            if (buffering) {
+                // 对照 STATE_PREPARING/BUFFERING: 启动超时换源
+                scheduleBufferTimeout()
+            } else {
+                // 对照 STATE_BUFFERED: 取消超时任务 (计数只在播放成功时重置,
+                // 出错时 buffering 也会变 false, 不能在此重置)
+                bufferTimeoutJob?.cancel()
+                bufferTimeoutJob = null
+            }
+        }
+
+        override fun onEnded() {
+            // 对照 STATE_PLAYBACK_COMPLETED: 直播流结束与错误同样处理
+            scheduleErrorRetry()
+        }
+
+        override fun onError(code: Int, message: String) {
+            // 内核内部已处理"自动模式切软解重试"; 走到这里的都是真失败: 3.5s 后换源.
+            scheduleErrorRetry()
+        }
+
+        override fun onVideoSize(width: Int, height: Int, pixelRatio: Float) {
+            if (width > 0 && height > 0) {
+                _videoAspectRatio.value = width.toFloat() * pixelRatio / height
+            }
+        }
+
+        override fun onNotice(message: String) {
+            com.me.ubox.ui.AppSnackbar.show(message)
+        }
+    }
+
     init {
-        player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                _playing.value = isPlaying
-                if (isPlaying) {
-                    // 对照 STATE_PLAYING: 取消换源任务并重置失败计数
-                    cancelTimers()
-                    changeSourceTimes = 0
-                }
-            }
+        engine.listener = engineListener
+        watchDecoderMode()
+    }
 
-            override fun onPlaybackStateChanged(state: Int) {
-                _buffering.value = state == Player.STATE_BUFFERING
-                if (state == Player.STATE_BUFFERING) {
-                    // 对照 STATE_PREPARING/BUFFERING: 启动超时换源
-                    scheduleBufferTimeout()
-                } else if (state == Player.STATE_READY) {
-                    // 对照 STATE_BUFFERED: 取消超时任务 (计数只在播放成功时重置,
-                    // 出错时 buffering 也会变 false, 不能在此重置)
-                    bufferTimeoutJob?.cancel()
-                    bufferTimeoutJob = null
-                } else if (state == Player.STATE_ENDED) {
-                    // 对照 STATE_PLAYBACK_COMPLETED: 直播流结束与错误同样处理
-                    scheduleErrorRetry()
-                }
+    /**
+     * 设置页改了解码方式: 换内核类别 (ExoPlayer ↔ IjkPlayer) 时重建内核并重连当前频道,
+     * 让设置立即生效 (直播没有进度, 直接重连).
+     */
+    private fun watchDecoderMode() {
+        viewModelScope.launch {
+            com.me.ubox.player.DecoderPrefs.mode.collect { mode ->
+                if (mode == currentMode) return@collect
+                val crossKernel = com.me.ubox.player.DecoderPrefs.isIjk(mode) !=
+                    com.me.ubox.player.DecoderPrefs.isIjk(currentMode)
+                currentMode = mode
+                if (!crossKernel) return@collect
+                rebuildEngine()
             }
+        }
+    }
 
-            override fun onPlayerError(error: PlaybackException) {
-                // 自动模式: 解码器相关错误先切软解重试, 不算失败.
-                if (decoder.onPlayerError(player, error)) return
-                // 对照 STATE_ERROR: 3.5s 后换源
-                scheduleErrorRetry()
-            }
-
-            override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
-                // 硬解/软解模式没有可用的视频解码器 -> 按失败处理 (同样 3.5s 后换源), 不悄悄只放声音.
-                if (decoder.onTracks(player, tracks) ==
-                    com.me.ubox.player.DecoderController.TracksCheck.UNSUPPORTED
-                ) {
-                    scheduleErrorRetry()
-                }
-            }
-
-            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
-                if (videoSize.width > 0 && videoSize.height > 0) {
-                    _videoAspectRatio.value = videoSize.width.toFloat() / videoSize.height
-                }
-            }
-        })
+    private fun rebuildEngine() {
+        val req = currentRequest ?: return
+        cancelTimers()
+        changeSourceTimes = 0
+        engine.listener = null
+        engine.release()
+        engine = PlayerEngines.create()
+        engine.listener = engineListener
+        engine.setSurface(surface)
+        _buffering.value = true
+        engine.open(req)
+        engine.play()
     }
 
     // ================= 数据加载 =================
@@ -261,7 +293,7 @@ class LiveViewModel : ViewModel() {
         _currentChannel.value = null
         synchronized(passwordConfirmed) { passwordConfirmed.clear() }
         changeSourceTimes = 0
-        player.stop()
+        engine.stop()
         _playing.value = false
         _buffering.value = false
     }
@@ -284,7 +316,7 @@ class LiveViewModel : ViewModel() {
                     _currentChannel.value!!.sourceNum == 1))
         ) {
             // 点击当前已选频道/唯一线路: 不重载, 暂停中则补一次播放
-            if (!_playing.value) player.play()
+            if (!_playing.value) engine.play()
             return true
         }
         if (changeSource && _currentChannel.value == null) return false
@@ -307,17 +339,17 @@ class LiveViewModel : ViewModel() {
     }
 
     private fun openMedia(item: LiveChannelItem) {
-        PlayerHeaders.current = item.getHeaders()
         // 直播 .m3u8 直链若 path 不带扩展名 (http://ip:port/live/xxx 形式),
-        // 会被推断成 progressive 流导致 extractor 解析失败, 显式声明 HLS.
-        val mediaItem = MediaItem.Builder()
-            .setUri(item.url)
-            .apply { inferMimeType(item.url)?.let { setMimeType(it) } }
-            .build()
-        decoder.newItem()
-        player.setMediaItem(mediaItem)
-        player.prepare()
-        player.play()
+        // ExoPlayer 会推断成 progressive 流导致解析失败, 显式声明 HLS (inferMimeType).
+        val request = PlayRequest(
+            url = item.url,
+            headers = item.getHeaders(),
+            mimeType = inferMimeType(item.url),
+            live = true,
+        )
+        currentRequest = request
+        engine.open(request)
+        engine.play()
     }
 
     fun playPreSource() {
@@ -507,9 +539,9 @@ class LiveViewModel : ViewModel() {
                 playChannel(_playGroupIndex.value, _playChannelIndex.value)
             }
         } else if (_playing.value) {
-            player.pause()
+            engine.pause()
         } else if (_currentChannel.value != null) {
-            player.play()
+            engine.play()
         }
     }
 
@@ -537,7 +569,7 @@ class LiveViewModel : ViewModel() {
         // 用 stop 而非 pause: "准备中/缓冲中"时 pause 不生效, 加载完成会自动续播
         cancelTimers()
         needManualPlay = true
-        player.stop()
+        engine.stop()
         if (_fullscreen.value) {
             _fullscreen.value = false
             _tvPanel.value = false
@@ -580,7 +612,8 @@ class LiveViewModel : ViewModel() {
 
     /** 视频表面就绪: 把播放器绑到 SurfaceView. */
     fun attachSurface(surface: android.view.Surface) {
-        player.setVideoSurface(surface)
+        this.surface = surface
+        engine.setSurface(surface)
         // 已停止 (切 Tab 后) 且当前有频道: 重新准备
         if (needManualPlay && _currentChannel.value != null) {
             playChannel(_playGroupIndex.value, _playChannelIndex.value)
@@ -588,12 +621,16 @@ class LiveViewModel : ViewModel() {
     }
 
     fun detachSurface() {
-        player.setVideoSurface(null)
+        this.surface = null
+        engine.setSurface(null)
     }
+
+    /** 当前内核 + 解码方式 (调试/提示用). */
+    fun engineInfo(): String = engine.describe()
 
     override fun onCleared() {
         cancelTimers()
-        player.release()
+        engine.release()
         super.onCleared()
     }
 }
