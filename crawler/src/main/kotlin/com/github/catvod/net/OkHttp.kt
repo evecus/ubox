@@ -41,6 +41,7 @@ object OkHttp {
             client?.let { return it }
             val c = OkHttpClient.Builder()
                 .dns(dns())
+                .eventListenerFactory(CallTracker.factory)
                 .addInterceptor(defaultHeaders())
                 .connectTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
                 .readTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
