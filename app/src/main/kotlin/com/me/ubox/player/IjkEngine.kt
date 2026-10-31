@@ -361,7 +361,9 @@ class IjkEngine : PlayerEngine {
         p.setOption(IjkMediaPlayer.OPT_CATEGORY_CODEC, "skip_loop_filter", 48L)
         // Range 请求探测: 部分源站不支持 Range, 关掉避免 416/卡住.
         p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "http-detect-range-support", 0L)
-        p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "protocol_whitelist", "file,http,https,crypto,tcp,tls,rtmp,rtsp,httpproxy")
+        p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "protocol_whitelist", "file,http,https,crypto,tcp,tls,rtmp,rtsp,httpproxy,hls,async,data")
+        // FFmpeg 5.x 的 HLS 默认只认标准分片扩展名; 很多片源把 ts 伪装成 .jpg/.png/.html 等, 放开避免被拒.
+        p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "allowed_extensions", "ALL")
     }
 
     private fun ijkErrorName(what: Int): String = when (what) {

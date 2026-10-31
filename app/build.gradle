@@ -102,13 +102,17 @@ dependencies {
     // 播放走 OkHttp (信任所有证书 + 共享 DNS + IDN 域名), 对齐原版 mpv 不校验 TLS 的行为.
     implementation "androidx.media3:media3-datasource-okhttp:1.5.1"
 
-    // IjkPlayer (ijkplayer): 设置页"解码方式"选 IJK 系列时使用.
+    // IjkPlayer: 设置页"解码方式"选 IJK 系列时使用.
     // 与 ExoPlayer 并存: 支持 FLV/RTMP 等 ExoPlayer 不支持的容器, 并可纯软解兜底.
+    // 注意: 官方 tv.danmaku.ijk.media:*:0.8.8 预编译包没有编进 https/TLS, 打开 https 地址会报
+    //   "Protocol not found" (-10000), 所以改用 GSYVideoPlayer 维护的 ijk 构建
+    //   (FFmpeg n5.1.10 + OpenSSL 3.5.9, 带 https/hls/crypto 等协议).
+    //   Java 类包名仍是 tv.danmaku.ijk.media.player.*, 业务代码无需改动.
     // 只引 armeabi-v7a / arm64-v8a 两个 ABI (与 defaultConfig.ndk.abiFilters 一致);
-    // 若把 abiFilters 改成 x86, 需同时补 ijkplayer-x86 / ijkplayer-x86_64.
-    implementation "tv.danmaku.ijk.media:ijkplayer-java:0.8.8"
-    implementation "tv.danmaku.ijk.media:ijkplayer-armv7a:0.8.8"
-    implementation "tv.danmaku.ijk.media:ijkplayer-arm64:0.8.8"
+    // 若把 abiFilters 改成 x86_64, 需补 gsyvideoplayer-x64. 不要再同时引 ex_so (同 ABI 会 so 冲突).
+    implementation "io.github.carguo:gsyijkjava:1.0.0"
+    implementation "io.github.carguo:gsyvideoplayer-armv7a:14.0.0"
+    implementation "io.github.carguo:gsyvideoplayer-arm64:14.0.0"
 
     implementation "androidx.collection:collection:1.4.0"
 
