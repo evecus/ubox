@@ -56,6 +56,7 @@ fun HistoryScreen(
     onOpenDetail: (String, String, String) -> Unit,
 ) {
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
+    val remote by TvMode.isRemote.collectAsStateWithLifecycle()
     var items by remember { mutableStateOf<List<HistoryItem>?>(null) }
 
     fun reload() {
@@ -64,9 +65,10 @@ fun HistoryScreen(
 
     LaunchedEffect(Unit) { reload() }
 
-    // 独立页面: 自带顶栏 + 返回, 不显示底部栏/左侧栏 (同搜索页).
+    // 独立页面: 自带顶栏, 不显示底部栏/左侧栏 (同搜索页).
+    // TV 遥控器用返回键, 顶栏不放返回按钮.
     androidx.compose.material3.Scaffold(
-        topBar = { SimpleTopBar(title = "观看历史", onBack = onBack) },
+        topBar = { SimpleTopBar(title = "观看历史", onBack = if (remote) null else onBack) },
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             HistoryContent(items = items, onOpenDetail = onOpenDetail, reload = ::reload)

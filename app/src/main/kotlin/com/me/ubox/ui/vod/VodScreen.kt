@@ -45,7 +45,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -256,7 +255,6 @@ fun VodScreen(
                 vw = vw,
                 vh = vh,
                 anyDialog = anyDialog,
-                onExit = { ui.fullscreen = false },
                 onSpeed = { showSpeed = true },
                 onScale = { showScale = true },
                 onSkip = { showSkip = true },
@@ -285,7 +283,6 @@ fun VodScreen(
                 fav = fav,
                 switching = switching,
                 scaleType = scaleType,
-                onBack = onBack,
                 onReload = vm::loadDetail,
                 onFullscreen = { ui.fullscreen = true },
                 onToggleFav = vm::toggleFav,
@@ -438,7 +435,6 @@ private fun SmallLayout(
     fav: Boolean,
     switching: Boolean,
     scaleType: Int,
-    onBack: () -> Unit,
     onReload: () -> Unit,
     onFullscreen: () -> Unit,
     onToggleFav: () -> Unit,
@@ -613,8 +609,8 @@ private fun SmallLayout(
                 Column(Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(detailError, color = Color.White)
                     Spacer(Modifier.height(8.dp))
+                    // 返回走遥控器返回键, 不在这里放"返回"按钮.
                     TextButton(onClick = onReload) { Text("重试") }
-                    TextButton(onClick = onBack) { Text("返回") }
                 }
             }
             else -> {
@@ -753,7 +749,6 @@ private fun FullscreenPlayer(
     vw: Int,
     vh: Int,
     anyDialog: Boolean,
-    onExit: () -> Unit,
     onSpeed: () -> Unit,
     onScale: () -> Unit,
     onSkip: () -> Unit,
@@ -895,7 +890,7 @@ private fun FullscreenPlayer(
         DanmakuLayer(modifier = Modifier.fillMaxSize())
 
         if (overlay) {
-            // 顶栏: 片名 · 集名 + 退出全屏
+            // 顶栏: 片名 · 集名 (退出全屏走遥控器返回键, 页面里不放按钮)
             Row(
                 modifier = Modifier
                     .align(Alignment.TopStart)
@@ -911,13 +906,6 @@ private fun FullscreenPlayer(
                     overflow = TextOverflow.Ellipsis,
                     fontSize = 18.sp,
                     modifier = Modifier.weight(1f),
-                )
-                TvButton(
-                    label = "退出全屏",
-                    icon = Icons.Filled.FullscreenExit,
-                    height = 44.dp,
-                    fontSize = 15,
-                    onTap = onExit,
                 )
             }
             // 底栏: 精简按钮行 + 进度条
@@ -1073,8 +1061,8 @@ private fun FullscreenPlayer(
                         )
                     }
                     Spacer(Modifier.height(8.dp))
+                    // 退出走遥控器返回键, 不在这里放"返回"按钮.
                     Row {
-                        TextButton(onClick = onExit) { Text("返回") }
                         if (error.isNotEmpty()) {
                             TextButton(onClick = vm::retry) { Text("重试") }
                         }

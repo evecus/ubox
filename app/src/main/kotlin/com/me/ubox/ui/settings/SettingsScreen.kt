@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -22,7 +23,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBackIosNew
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Palette
@@ -51,9 +51,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,9 +74,10 @@ import com.me.ubox.engine.EngineClient
 import com.me.ubox.ui.AppShell
 import com.me.ubox.ui.AppSnackbar
 import com.me.ubox.ui.components.SectionHeader
-import com.me.ubox.ui.components.TvButton
 import com.me.ubox.ui.components.TvFocusable
 import com.me.ubox.ui.components.pageFocusGuard
+import com.me.ubox.ui.components.rememberTvInputState
+import com.me.ubox.ui.components.tvConfirmKeyboard
 import com.me.ubox.ui.dialogs.DanmuApiDialog
 import com.me.ubox.ui.dialogs.DanmuFullSettingDialog
 import com.me.ubox.ui.dialogs.InfoDialog
@@ -212,50 +213,59 @@ fun SettingsScreen() {
 
     LaunchedEffect(Unit) { refreshEngine() }
 
-    // 真 TV 无左侧栏: 设置页顶部提供"返回首页"入口 (平板走左侧栏, 手机走底部导航).
-    // 每次切到设置页都把焦点落到该按钮 (KeepAliveStack 的隐藏页不抢焦点).
-    //
-    // 布局要点: 返回按钮与滚动内容必须是"上下排列"的两块 (外层 Column), 不能是 KeepAliveStack
-    // 的 Box 里互相叠放的兄弟节点 —— 叠放时返回按钮的矩形与表单第一项重叠, 方向键焦点搜索
-    // (beam search) 找不到"正下方"的候选, 焦点就卡在返回按钮上.
-    // 另外显式连线: 返回按钮 ↓ = 第一个输入框, 输入框 ↑ = 返回按钮, 不依赖几何搜索.
-    val backRequester = remember { FocusRequester() }
+    // 真 TV 无左侧栏, 且页面里不放"返回首页"按钮 —— 一律用遥控器返回键回首页
+    // (平板走左侧栏, 手机走底部导航). 每次切到设置页把焦点落到第一个输入框
+    // (KeepAliveStack 的隐藏页不抢焦点; 输入框是只读态, 聚焦不会弹输入法).
+    val shellTab by AppShell.tabIndex.collectAsStateWithLifecycle()
     val firstItemRequester = remember { FocusRequester() }
-    Column(modifier = Modifier.fillMaxSize()) {
-    if (remoteMode) {
-        val shellTab by AppShell.tabIndex.collectAsStateWithLifecycle()
-        LaunchedEffect(shellTab) {
-            if (shellTab == AppShell.SETTINGS_TAB) {
-                repeat(8) {
-                    androidx.compose.runtime.withFrameNanos { }
-                    val ok = try {
-                        backRequester.requestFocus()
-                        true
-                    } catch (_: IllegalStateException) {
-                        false
-                    }
-                    if (ok) return@LaunchedEffect
+    LaunchedEffect(shellTab) {
+        if (remoteMode && shellTab == AppShell.SETTINGS_TAB) {
+            repeat(8) {
+                androidx.compose.runtime.withFrameNanos { }
+                val ok = try {
+                    firstItemRequester.requestFocus()
+                    true
+                } catch (_: IllegalStateException) {
+                    false
                 }
+                if (ok) return@LaunchedEffect
             }
         }
-        TvButton(
-            label = "返回首页",
-            icon = Icons.Filled.ArrowBackIosNew,
-            height = 48.dp,
-            fontSize = 16,
-            autofocus = true,
-            onTap = { AppShell.selectTab(AppShell.HOME_TAB) },
-            modifier = Modifier
-                .padding(start = 12.dp, top = 12.dp, bottom = 8.dp)
-                .focusRequester(backRequester)
-                .focusProperties { down = firstItemRequester },
-        )
+    }
+
+    // 遥控器输入框: 聚焦不弹输入法, 按确认键才弹 (见 Modifier.tvConfirmKeyboard).
+    val urlInputState = rememberTvInputState()
+    val liveUrlInputState = rememberTvInputState()
+    val keyboard = LocalSoftwareKeyboardController.current
+    val anyDialog = showSiteFilter || showHomeRecPicker || showTvModePicker ||
+        showDecoderPicker || showDanmuSetting || showDanmuApi || showEngineLog
+
+    // TV 设置页的返回键: 有弹层先收弹层, 有输入法先收输入法, 否则回首页.
+    // 这里必须是"一个" BackHandler 内部按优先级分支 —— 多个 BackHandler 的生效顺序
+    // 取决于注册顺序, 拆开会不可控.
+    BackHandler(enabled = remoteMode && shellTab == AppShell.SETTINGS_TAB) {
+        when {
+            anyDialog -> {
+                showSiteFilter = false
+                showHomeRecPicker = false
+                showTvModePicker = false
+                showDecoderPicker = false
+                showDanmuSetting = false
+                showDanmuApi = false
+                showEngineLog = false
+            }
+            urlInputState.editing || liveUrlInputState.editing -> {
+                urlInputState.close()
+                liveUrlInputState.close()
+                keyboard?.hide()
+            }
+            else -> AppShell.selectTab(AppShell.HOME_TAB)
+        }
     }
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f)
+            .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(all = 12.dp),
     ) {
@@ -284,13 +294,20 @@ fun SettingsScreen() {
             },
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = {
+                // TV: Done = 应用并收起输入法 (回到"聚焦但不弹键盘"态).
+                if (remoteMode) {
+                    urlInputState.close()
+                    keyboard?.hide()
+                }
                 scope.launch { applyConfigInput(urlInput, false) }
             }),
+            // TV: 聚焦不弹输入法, 确认键才弹.
+            readOnly = remoteMode && !urlInputState.editing,
             modifier = Modifier
                 .fillMaxWidth()
                 .pageFocusGuard()
                 .focusRequester(firstItemRequester)
-                .focusProperties { up = backRequester },
+                .then(if (remoteMode) Modifier.tvConfirmKeyboard(urlInputState) else Modifier),
         )
         Spacer(Modifier.height(6.dp))
         Row {
@@ -364,6 +381,11 @@ fun SettingsScreen() {
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = {
+                // TV: Done = 保存并收起输入法 (回到"聚焦但不弹键盘"态).
+                if (remoteMode) {
+                    liveUrlInputState.close()
+                    keyboard?.hide()
+                }
                 val changed = LiveStore.setLiveUrl(liveUrlInput.trim())
                 liveStatus = if (changed) {
                     if (liveUrlInput.trim().isEmpty()) "直播源已清除" else "直播源已保存"
@@ -371,7 +393,12 @@ fun SettingsScreen() {
                     "直播源无变化"
                 }
             }),
-            modifier = Modifier.fillMaxWidth().pageFocusGuard(),
+            // TV: 聚焦不弹输入法, 确认键才弹.
+            readOnly = remoteMode && !liveUrlInputState.editing,
+            modifier = Modifier
+                .fillMaxWidth()
+                .pageFocusGuard()
+                .then(if (remoteMode) Modifier.tvConfirmKeyboard(liveUrlInputState) else Modifier),
         )
         Spacer(Modifier.height(6.dp))
         Row {
@@ -625,7 +652,6 @@ fun SettingsScreen() {
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(24.dp))
-    }
     }
 
     if (showSiteFilter) {

@@ -59,6 +59,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
@@ -73,6 +74,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -288,6 +290,52 @@ fun isTvSelectKey(key: Key): Boolean {
         key == Key.DirectionCenter ||
         key == Key.Spacebar ||
         key == Key.ButtonA
+}
+
+/**
+ * TV 输入框的"输入法激活"状态 (见 [Modifier.tvConfirmKeyboard]).
+ *
+ * 遥控器上"焦点落到输入框"和"打开输入法"是两件事: 直接聚焦就弹输入法会把整屏
+ * 挡掉, 方向键也没法再浏览其它设置项. 这里把它拆开 —— 聚焦只是选中, 按确认键
+ * 才 [open] 输入法; 焦点移出即 [close], 下次聚焦仍需再按确认键.
+ */
+class TvInputState internal constructor() {
+    /** true = 已激活 (字段可编辑, 输入法已弹出). */
+    var editing by mutableStateOf(false)
+        private set
+
+    fun open() {
+        editing = true
+    }
+
+    fun close() {
+        editing = false
+    }
+}
+
+@Composable
+fun rememberTvInputState(): TvInputState = remember { TvInputState() }
+
+/**
+ * 遥控器输入框修饰: 焦点移到输入框不弹输入法, 按确认键才弹 (见 [TvInputState]).
+ *
+ * 配合 `readOnly = !state.editing` 使用 —— 未激活时字段只读, 输入法不会因聚焦弹出;
+ * 确认键按下后转为可编辑并主动拉起输入法. 焦点移出自动回到未激活.
+ */
+@Composable
+fun Modifier.tvConfirmKeyboard(state: TvInputState): Modifier {
+    val keyboard = LocalSoftwareKeyboardController.current
+    return this
+        .onFocusChanged { if (!it.isFocused) state.close() }
+        .onPreviewKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            if (!isTvSelectKey(event.key)) return@onPreviewKeyEvent false
+            // 已激活时放行: 确认键交给输入法 / ImeAction 处理.
+            if (state.editing) return@onPreviewKeyEvent false
+            state.open()
+            keyboard?.show()
+            true
+        }
 }
 
 /**
@@ -747,12 +795,15 @@ fun formatDuration(ms: Long): String {
     return if (h > 0) "$h:$mm:$ss" else "$m:$ss"
 }
 
-/** 二级页面顶部 AppBar (返回 + 标题 + actions). */
+/**
+ * 二级页面顶部 AppBar (返回 + 标题 + actions).
+ * [onBack] = null 时不显示返回按钮 —— TV 遥控器用返回键, 页面里不放返回按钮.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SimpleTopBar(
     title: String,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     actions: @Composable () -> Unit = {},
 ) {
     TopAppBar(
@@ -764,8 +815,10 @@ fun SimpleTopBar(
             )
         },
         navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "返回")
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "返回")
+                }
             }
         },
         actions = { actions() },

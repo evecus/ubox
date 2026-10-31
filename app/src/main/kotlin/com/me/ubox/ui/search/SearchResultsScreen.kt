@@ -84,6 +84,7 @@ fun SearchResultsScreen(
     ),
 ) {
     val tv by TvMode.isTV.collectAsStateWithLifecycle()
+    val remote by TvMode.isRemote.collectAsStateWithLifecycle()
     val sites by vm.sites.collectAsStateWithLifecycle()
     val results by vm.results.collectAsStateWithLifecycle()
     val queryState by vm.query.collectAsStateWithLifecycle()
@@ -106,7 +107,8 @@ fun SearchResultsScreen(
     }
 
     Scaffold(
-        topBar = { SimpleTopBar(title = "搜索结果", onBack = onBack) },
+        // TV 遥控器用返回键, 顶栏不放返回按钮.
+        topBar = { SimpleTopBar(title = "搜索结果", onBack = if (remote) null else onBack) },
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             SearchResultsBody(

@@ -10,7 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -26,7 +25,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -87,7 +85,8 @@ import com.me.ubox.ui.theme.LiveColors
 
 /**
  * 直播页: 三套布局, 分别对照参考实现
- *   - TV (遥控器) = NovaTV LivePlayActivity: 视频铺满, 确定键呼出右侧频道面板,
+ *   - TV (遥控器) = NovaTV LivePlayActivity: 视频铺满, 确定键呼出左侧频道面板,
+ *                   面板 = 分组 / 频道 / 线路 三列竖向平行,
  *                   上下键换台, 左右键换线路, MENU 键循环画面比例 (不做设置菜单);
  *   - 平板 (触摸) = NovaBox layout-sw600dp: 左 72% 播放器 | 右 28% 面板 (52dp 信息栏 + 三列列表);
  *   - 手机 (触摸) = NovaBox layout: 播放器 weight 2 + 52dp 信息栏 + 三列列表 weight 3.
@@ -481,9 +480,17 @@ private fun SourceList(
     vm: LiveViewModel,
     large: Boolean,
     currentChannel: LiveChannelItem?,
+    scrollToSelected: Boolean = false,
 ) {
     if (currentChannel == null) return
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
+    val state = rememberLazyListState(
+        initialFirstVisibleItemIndex = maxOf(0, currentChannel.sourceIndex - 3),
+    )
+    // 面板呼出前用左右键换过源时, 选中源可能落在可视区之外 -> 滚动到选中项.
+    LaunchedEffect(scrollToSelected, currentChannel.channelIndex, currentChannel.sourceIndex) {
+        if (scrollToSelected) state.animateScrollToItem(maxOf(0, currentChannel.sourceIndex - 3))
+    }
+    LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(4.dp)) {
         items(currentChannel.sourceNum) { i ->
             LiveListItem(
                 text = currentChannel.channelSourceNames.getOrElse(i) { "源${i + 1}" },
@@ -842,7 +849,16 @@ private fun TvLiveLayout(
     }
 }
 
-/** TV 频道面板 (贴右侧): 分组列 180dp + 频道列自适应 + 底部线路行 (多线路时). */
+/** TV 频道面板宽度: 分组列 + 频道列 (自适应) + 线路列. */
+private val TV_PANEL_WIDTH = 580.dp
+
+/** 分组列 / 线路列固定宽度, 中间频道列吃剩余. */
+private val TV_SIDE_COLUMN_WIDTH = 170.dp
+
+/**
+ * TV 频道面板 (贴左侧): 分组 / 频道 / 线路 三列竖向平行, 每列各带标题头.
+ * 遥控器左右键在三列之间移动焦点, 与手机 / 平板的三列结构保持一致.
+ */
 @Composable
 private fun BoxScope.TvChannelPanel(
     vm: LiveViewModel,
@@ -856,13 +872,14 @@ private fun BoxScope.TvChannelPanel(
 ) {
     Row(
         modifier = Modifier
-            .align(Alignment.CenterEnd)
+            .align(Alignment.CenterStart)
             .fillMaxHeight()
-            .width(460.dp)
+            .width(TV_PANEL_WIDTH)
             .background(Color(0xE6101418))
             .clickableNoRipple { },
     ) {
-        Column(modifier = Modifier.width(180.dp).fillMaxHeight()) {
+        // 1) 分组列
+        Column(modifier = Modifier.width(TV_SIDE_COLUMN_WIDTH).fillMaxHeight()) {
             PanelHeader("分组")
             if (noSource || groups.isEmpty()) {
                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -884,6 +901,7 @@ private fun BoxScope.TvChannelPanel(
                 }
             }
         }
+        // 2) 频道列
         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
             PanelHeader(currentChannel?.channelName ?: "请选择频道")
             Box(modifier = Modifier.weight(1f)) {
@@ -894,24 +912,23 @@ private fun BoxScope.TvChannelPanel(
                     autofocusSelected = true,
                 )
             }
-            if (currentChannel != null && currentChannel.sourceNum > 1) {
-                PanelHeader("线路 (${currentChannel.sourceIndex + 1}/${currentChannel.sourceNum})")
-                LazyRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(72.dp),
-                    contentPadding = PaddingValues(horizontal = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    items(currentChannel.sourceNum) { i ->
-                        LiveListItem(
-                            text = currentChannel.channelSourceNames.getOrElse(i) { "源${i + 1}" },
-                            selected = i == currentChannel.sourceIndex,
-                            large = false,
-                            onClick = { vm.playChannelBySource(i) },
-                        )
-                    }
-                }
+        }
+        // 3) 线路列 (竖向, 与分组 / 频道两列平行)
+        Column(modifier = Modifier.width(TV_SIDE_COLUMN_WIDTH).fillMaxHeight()) {
+            PanelHeader(
+                if (currentChannel != null && currentChannel.sourceNum > 0) {
+                    "线路 (${currentChannel.sourceIndex + 1}/${currentChannel.sourceNum})"
+                } else {
+                    "线路"
+                },
+            )
+            Box(modifier = Modifier.weight(1f)) {
+                SourceList(
+                    vm = vm,
+                    large = true,
+                    currentChannel = currentChannel,
+                    scrollToSelected = true,
+                )
             }
         }
     }
