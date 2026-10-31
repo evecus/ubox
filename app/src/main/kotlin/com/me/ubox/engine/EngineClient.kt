@@ -1,6 +1,7 @@
 package com.me.ubox.engine
 
 import com.github.catvod.crawler.SpiderLoader
+import com.github.catvod.net.CallTracker
 import com.github.catvod.net.OkHttp
 import com.github.catvod.server.LocalServer
 import com.mobile.js.App
@@ -10,6 +11,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 引擎客户端: Flutter 版 `ubox/engine` MethodChannel 的 Kotlin 直连替代.
@@ -24,13 +26,30 @@ import java.util.concurrent.Executors
  *   - decrypt    原版 FindResult 的配置解密
  *   - download   OkHttp 下载二进制 (jar), 支持 IDN 中文域名
  *
- * 线程模型对照原 SpiderEngine: 固定 4 线程池 (QuickJS/JNI 回调与 DexClassLoader
- * 不宜丢进 IO 的弹性池).
+ * 线程模型 (对照原 SpiderEngine 的固定线程池, 但搜索与其他调用分池):
+ *   - [runner]       home/category/detail/player 等交互类调用, 6 线程;
+ *   - [searchRunner] 搜索专用, 12 线程. 搜索会并行打几十个源且每个源可能阻塞很久,
+ *                    若与详情/播放解析共用一个池, 点进详情会排在整队搜索任务后面 (转圈很久).
+ *   QuickJS/JNI 回调与 DexClassLoader 不宜丢进 IO 的弹性池, 所以仍用固定线程池.
  */
 object EngineClient {
 
+    /** 交互类调用线程数 (详情/播放解析/分类/首页). */
+    private const val RUNNER_THREADS = 6
+
+    /** 搜索并发数: 搜索是 IO 等待为主, 适当调大可明显缩短多源搜索总耗时. */
+    private const val SEARCH_THREADS = 12
+
     private val runner: CoroutineDispatcher =
-        Executors.newFixedThreadPool(4).asCoroutineDispatcher()
+        Executors.newFixedThreadPool(RUNNER_THREADS).asCoroutineDispatcher()
+
+    // 线程名必须以 CallTracker.THREAD_PREFIX 开头: 取消搜索时靠它找到并 cancel 这些线程上的 HTTP 调用.
+    private val searchRunner: CoroutineDispatcher = run {
+        val index = AtomicInteger()
+        Executors.newFixedThreadPool(SEARCH_THREADS) { r ->
+            Thread(r, "${CallTracker.THREAD_PREFIX}-${index.incrementAndGet()}").apply { isDaemon = true }
+        }.asCoroutineDispatcher()
+    }
 
     /**
      * 登记站点. [sites] 为 TVBox sites 条目 (key/type/api/ext/jar).
@@ -60,8 +79,8 @@ object EngineClient {
     }
 
     /** spider 调用, 返回 JSON 字符串 (空串 = 失败). */
-    suspend fun invoke(siteKey: String, method: String, arg: String): String =
-        withContext(runner) {
+    suspend fun invoke(siteKey: String, method: String, arg: String, search: Boolean = false): String =
+        withContext(if (search) searchRunner else runner) {
             try {
                 SpiderLoader.invoke(siteKey, method, arg)
             } catch (_: Throwable) {
@@ -115,6 +134,17 @@ object EngineClient {
 
     fun stopAll() {
         SpiderLoader.cancelAll()
+    }
+
+    /**
+     * 立即中断进行中的搜索网络请求 (进入详情/播放页时调用), 让被占住的线程释放:
+     *   - js 源: 取消带 js_okhttp_tag 的请求 (SpiderLoader.cancelAll);
+     *   - jar 源: 取消搜索线程上登记的 HTTP 调用 (CallTracker).
+     * 需在取消搜索协程之后调用; 不影响搜索线程之外的请求 (播放/图片/详情).
+     */
+    fun cancelSearch() {
+        SpiderLoader.cancelAll()
+        CallTracker.cancelTracked()
     }
 
     fun unload() {

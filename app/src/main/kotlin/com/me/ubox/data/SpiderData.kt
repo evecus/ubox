@@ -36,7 +36,7 @@ object SpiderData {
             put("wd", key)
             put("pg", page)
         }
-        return asMap(EngineClient.invoke(siteKey, "search", arg.toString()))
+        return asMap(EngineClient.invoke(siteKey, "search", arg.toString(), search = true))
     }
 
     suspend fun play(siteKey: String, flag: String, id: String): JSONObject {

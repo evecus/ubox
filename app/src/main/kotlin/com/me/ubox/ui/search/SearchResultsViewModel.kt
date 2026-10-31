@@ -8,6 +8,9 @@ import com.me.ubox.data.Site
 import com.me.ubox.data.SpiderData
 import com.me.ubox.data.VodItem
 import com.me.ubox.data.vodList
+import com.me.ubox.engine.EngineClient
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,6 +70,9 @@ class SearchResultsViewModel(
             ?: com.me.ubox.data.SiteFilter.apply(all)
     }
 
+    /** 当前搜索协程 (进入详情页时用于停止搜索). */
+    private var searchJob: Job? = null
+
     init {
         _sites.value = resolveSites()
         if (initialQuery.isNotEmpty()) {
@@ -79,13 +85,20 @@ class SearchResultsViewModel(
         if (query.isEmpty() || _running.value) return
         _query.value = query
         _sites.value = resolveSites()
-        _running.value = true
         _done.value = 0
         _filter.value = null
         _results.value = emptyMap()
         _focusFirstResult.value = false
-        viewModelScope.launch {
-            val targets = _sites.value
+        runSites(_sites.value, query)
+    }
+
+    private fun runSites(targets: List<Site>, query: String) {
+        if (targets.isEmpty()) {
+            _running.value = false
+            return
+        }
+        _running.value = true
+        searchJob = viewModelScope.launch {
             targets.map { site ->
                 async {
                     try {
@@ -93,8 +106,11 @@ class SearchResultsViewModel(
                         val list = vodList(json.opt("list"))
                         // 过滤明显不相关的无效 entry (空名已过滤), 最多保留 20 个.
                         _results.update { it + (site.key to list.take(20)) }
+                        _done.update { it + 1 }
+                    } catch (e: CancellationException) {
+                        // 被 stopSearch 取消: 不计入完成, 直接结束.
+                        throw e
                     } catch (_: Exception) {
-                    } finally {
                         _done.update { it + 1 }
                     }
                 }
@@ -105,6 +121,20 @@ class SearchResultsViewModel(
                 _focusFirstResult.value = true
             }
         }
+    }
+
+    /**
+     * 立即停止搜索 (进入详情/播放页时调用), 保留已有结果, 返回结果页后不再补搜:
+     *   1. 取消搜索协程: 还在排队的源直接丢弃, 不再占线程;
+     *   2. 取消进行中的网络请求: 阻塞在 socket 上的搜索线程立刻释放, 详情/播放解析不用等它们超时.
+     * 顺序不能反: 先取消协程, 被打断的请求返回空结果时才不会被当成"该源无结果"记入完成.
+     */
+    fun stopSearch() {
+        if (!_running.value) return
+        searchJob?.cancel()
+        searchJob = null
+        _running.value = false
+        EngineClient.cancelSearch()
     }
 
     fun setFilter(key: String?) {

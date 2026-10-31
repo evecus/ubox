@@ -92,6 +92,12 @@ fun SearchResultsScreen(
     val filter by vm.filter.collectAsStateWithLifecycle()
     val focusFirstResult by vm.focusFirstResult.collectAsStateWithLifecycle()
 
+    // 进入详情/播放页前先彻底停止搜索, 避免搜索占着线程/网络拖慢详情加载.
+    val openDetailAndStop: (String, String, String) -> Unit = { siteKey, vodId, name ->
+        vm.stopSearch()
+        onOpenDetail(siteKey, vodId, name)
+    }
+
     LaunchedEffect(focusFirstResult) {
         if (focusFirstResult) {
             // autofocus 只在本帧生效, 下一帧清零防止后续重建抢焦点.
@@ -113,7 +119,7 @@ fun SearchResultsScreen(
                 results = results,
                 filter = filter,
                 focusFirstResult = focusFirstResult,
-                onOpenDetail = onOpenDetail,
+                onOpenDetail = openDetailAndStop,
             )
         }
     }
