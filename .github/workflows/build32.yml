@@ -1,4 +1,4 @@
-name: build
+name: build armeabi-v7a
 
 on:
   workflow_dispatch:
@@ -35,6 +35,7 @@ jobs:
 
       - name: Build signed release APK
         env:
+          NOVA_ABI_FILTERS: armeabi-v7a
           RELEASE_STORE_FILE: ${{ github.workspace }}/release.keystore
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
@@ -48,10 +49,10 @@ jobs:
       - name: Move and rename APK
         run: |
           mkdir -p out
-          cp app/build/outputs/apk/release/*.apk out/ubox.apk
+          cp app/build/outputs/apk/release/*.apk out/ubox-armeabi-v7a.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: test
-          files: out/ubox.apk
+          files: out/ubox-armeabi-v7a.apk
