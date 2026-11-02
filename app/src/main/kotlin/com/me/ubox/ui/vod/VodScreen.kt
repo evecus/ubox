@@ -198,6 +198,8 @@ fun VodScreen(
     }
     var wasFullscreen by remember { mutableStateOf(false) }
     LaunchedEffect(ui.fullscreen, tv) {
+        // 进入全屏直接收起控制层 (不自动弹出); 退出后由各端自己的交互逻辑重新显示.
+        if (ui.fullscreen) ui.hideOverlay()
         val act = context.findVodActivity() ?: return@LaunchedEffect
         if (tv) {
             act.requestedOrientation = TvMode.baseOrientation()
@@ -762,11 +764,11 @@ private fun FullscreenPlayer(
     val overlay = ui.overlay || error.isNotEmpty()
     val rootFocus = remember { FocusRequester() }
 
-    LaunchedEffect(Unit) { ui.showOverlay() }
-    // 8 秒无操作自动收起控制层 (弹层打开时不计时).
+    LaunchedEffect(Unit) { ui.hideOverlay() }
+    // 3 秒无操作自动收起控制层 (弹层打开时不计时).
     LaunchedEffect(ui.overlay, ui.overlayTick, anyDialog) {
         if (ui.overlay && !anyDialog) {
-            delay(8000)
+            delay(3000)
             ui.hideOverlay()
         }
     }

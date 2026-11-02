@@ -122,10 +122,10 @@ internal fun VodTouchScreen(
     var previewMs by remember { mutableStateOf<Long?>(null) }
     var showEpisodes by remember { mutableStateOf(false) }
 
-    // 控制层自动隐藏 (对照 NovaBox): 小窗 3 秒, 全屏 8 秒; 选集侧栏打开时不计时.
+    // 控制层自动隐藏: 统一 3 秒; 选集侧栏打开时不计时.
     LaunchedEffect(ui.overlay, ui.overlayTick, playing, fullscreen, showEpisodes) {
         if (ui.overlay && playing && !showEpisodes) {
-            delay(if (fullscreen) 8000 else 3000)
+            delay(3000)
             ui.hideOverlay()
         }
     }
