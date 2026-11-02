@@ -1,12 +1,11 @@
 allprojects {
     repositories {
-        // 国内镜像: 代理 google/mavenCentral/gradlePluginPortal (sandbox 内 mavenCentral 直连不可达)
-        maven { url 'https://mirrors.cloud.tencent.com/nexus/repository/maven-public/' }
-        // jcenter 镜像: DanmakuFlameMaster(弹幕大师) 0.9.25 只在 jcenter 发布
-        // (Maven Central 仅到 0.3.8, 腾讯镜像不代理 jcenter), 需阿里云 jcenter.
-        maven { url 'https://maven.aliyun.com/repository/jcenter' }
+        // 官方源优先 (GitHub Actions 境外直连最快); 本地国内网络编译时 Gradle 会按顺序重试.
         google()
         mavenCentral()
+        // jcenter 镜像: DanmakuFlameMaster(弹幕大师) 0.9.25 只在 jcenter 发布
+        // (Maven Central 仅到 0.3.8), 需阿里云 jcenter 兜底, 放最后只兜缺的那个.
+        maven { url 'https://maven.aliyun.com/repository/jcenter' }
     }
 }
 

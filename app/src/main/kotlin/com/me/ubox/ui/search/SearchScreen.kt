@@ -137,7 +137,6 @@ fun SearchScreen(
     when {
         !tv -> PhoneSearchLayout(
             input = input,
-            sitesCount = sites.size,
             hotWords = hotWords,
             hotLoading = hotLoading,
             history = history,
@@ -210,7 +209,6 @@ fun SearchScreen(
 @Composable
 private fun PhoneSearchLayout(
     input: String,
-    sitesCount: Int,
     hotWords: List<String>,
     hotLoading: Boolean,
     history: List<String>,
@@ -300,14 +298,8 @@ private fun PhoneSearchLayout(
             contentPadding = PaddingValues(16.dp),
         ) {
             item {
-                Text(
-                    text = "输入关键词, 将并行搜索全部 $sitesCount 个源",
-                    textAlign = TextAlign.Center,
-                )
-            }
-            item {
-                Spacer(Modifier.height(20.dp))
-                Text("热词", fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text("热词", fontWeight = FontWeight.Bold, color = Color.White)
                 Spacer(Modifier.height(8.dp))
                 if (hotLoading) {
                     CircularProgressIndicator(
@@ -345,7 +337,7 @@ private fun PhoneSearchLayout(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("搜索历史", fontWeight = FontWeight.Bold)
+                        Text("搜索历史", fontWeight = FontWeight.Bold, color = Color.White)
                         Spacer(Modifier.weight(1f))
                         Text(
                             text = "清除",
@@ -488,6 +480,7 @@ private fun PadWordColumn(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
                 modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
             )
             if (onClear != null && words.isNotEmpty()) {
@@ -766,6 +759,7 @@ private fun TvWordPanel(
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
+            color = Color.White,
             modifier = Modifier.padding(start = 12.dp, top = 12.dp, bottom = 4.dp),
         )
         if (loading) {
@@ -813,6 +807,7 @@ private fun TvHistoryPanel(
             Text(
                 text = "历  史",
                 style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
             )
             Spacer(Modifier.weight(1f))
             if (history.isNotEmpty()) {
