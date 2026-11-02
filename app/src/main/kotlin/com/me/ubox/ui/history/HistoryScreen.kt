@@ -5,14 +5,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -20,7 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,13 +41,10 @@ import com.me.ubox.ui.AppSnackbar
 import com.me.ubox.ui.components.NetworkImage
 import com.me.ubox.ui.components.SimpleTopBar
 import com.me.ubox.ui.components.TvFocusable
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * 观看历史页 (样式对照收藏页 favorites_page.dart 的海报网格):
- * 海报网格 (封面 + 片名 + 源·集数 + 进度条 + 相对时间); 长按删除; 源未加载时提示.
+ * 海报网格 (封面 + 片名 + 源名, 同收藏页); 长按删除; 源未加载时提示.
  */
 @Composable
 fun HistoryScreen(
@@ -106,11 +100,6 @@ private fun HistoryContent(
         modifier = Modifier.fillMaxSize(),
     ) {
         itemsIndexed(list, key = { _, item -> item.siteKey + "#" + item.vodId }) { _, item ->
-            val progress = if (item.dur > 0) {
-                (item.pos.toFloat() / item.dur).coerceIn(0f, 1f)
-            } else {
-                0f
-            }
             TvFocusable(
                 onTap = {
                     val site = History.siteOf(item.siteKey)
@@ -162,52 +151,14 @@ private fun HistoryContent(
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = (if (tv) 16 else 12).sp),
                     )
                     Text(
-                        text = "${item.siteName} · ${if (item.ep.isEmpty()) "播放" else item.ep}",
+                        text = item.siteName,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         color = Color.Gray,
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = (if (tv) 14 else 10).sp),
                     )
-                    // 播放进度条 + 相对时间 (历史页独有, 收藏页没有).
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (progress > 0.01f) {
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(3.dp),
-                            )
-                        } else {
-                            // 无进度 = 不确定态 (对照 Flutter value: null 的动画).
-                            LinearProgressIndicator(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(3.dp),
-                            )
-                        }
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = tsText(item.ts),
-                            color = Color.Gray,
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = (if (tv) 12 else 10).sp),
-                        )
-                    }
                 }
             }
         }
-    }
-}
-
-/** 相对时间 (对照 Flutter 版 _tsText). */
-private fun tsText(ts: Long): String {
-    val dt = Date(ts)
-    val now = System.currentTimeMillis()
-    val diff = now - ts
-    return when {
-        diff < 60_000 -> "刚刚"
-        diff < 3_600_000 -> "${diff / 60_000}分钟前"
-        diff < 86_400_000 -> "${diff / 3_600_000}小时前"
-        diff < 30L * 86_400_000 -> "${diff / 86_400_000}天前"
-        else -> SimpleDateFormat("yyyy-MM-dd", Locale.US).format(dt)
     }
 }

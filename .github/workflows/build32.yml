@@ -2,6 +2,8 @@ name: build armeabi-v7a
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main, master]
 
 permissions:
   contents: write
