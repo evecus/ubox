@@ -215,7 +215,6 @@ internal fun VodTouchScreen(
                         if (fullscreen) {
                             FullscreenControls(
                                 title = title,
-                                playing = playing,
                                 positionMs = previewMs ?: positionMs,
                                 playPosMs = positionMs,
                                 durationMs = durationMs,
@@ -225,7 +224,6 @@ internal fun VodTouchScreen(
                                 scaleType = scaleType,
                                 danmuOpen = DanmuSettings.open.also { danmuRevision },
                                 onBack = { ui.fullscreen = false },
-                                onPlayPause = { vm.playOrPause(); ui.poke() },
                                 onNext = { vm.playNext(); ui.poke() },
                                 onSeek = { vm.seekTo(it); ui.poke() },
                                 onPreview = { previewMs = it },
@@ -551,7 +549,7 @@ private fun ToolRow(
             dark = dark,
             onClick = onDanmuSetting,
         )
-        ToolChip("云搜", dark = dark, onClick = onDanmuSearch)
+        ToolChip("搜弹幕", dark = dark, onClick = onDanmuSearch)
         ToolChip(if (skipSet) "片头尾 ✓" else "片头尾", selected = skipSet, dark = dark, onClick = onSkip)
     }
 }

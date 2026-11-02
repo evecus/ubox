@@ -922,14 +922,16 @@ private fun FullscreenPlayer(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    TvButton(
-                        label = if (playing) "暂停" else "播放",
-                        icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        autofocus = true,
-                        height = 48.dp,
-                        fontSize = 16,
-                        onTap = { vm.playOrPause(); ui.poke() },
-                    )
+                    if (hasNext) {
+                        TvButton(
+                            label = "下一集",
+                            icon = Icons.Filled.SkipNext,
+                            autofocus = true,
+                            height = 48.dp,
+                            fontSize = 16,
+                            onTap = { vm.playNext(); ui.poke() },
+                        )
+                    }
                     if (hasPrev) {
                         TvButton(
                             label = "上一集",
@@ -939,15 +941,18 @@ private fun FullscreenPlayer(
                             onTap = { vm.playPrev(); ui.poke() },
                         )
                     }
-                    if (hasNext) {
-                        TvButton(
-                            label = "下一集",
-                            icon = Icons.Filled.SkipNext,
-                            height = 48.dp,
-                            fontSize = 16,
-                            onTap = { vm.playNext(); ui.poke() },
-                        )
-                    }
+                    TvButton(
+                        label = "选集",
+                        height = 48.dp,
+                        fontSize = 16,
+                        onTap = onEpisodes,
+                    )
+                    TvButton(
+                        label = "搜弹幕",
+                        height = 48.dp,
+                        fontSize = 16,
+                        onTap = onDanmuSearch,
+                    )
                     TvButton(
                         label = "倍速 ${PlayerOptions.speedLabel(speed)}",
                         height = 48.dp,
@@ -967,13 +972,7 @@ private fun FullscreenPlayer(
                         onTap = onSkip,
                     )
                     TvButton(
-                        label = "选集",
-                        height = 48.dp,
-                        fontSize = 16,
-                        onTap = onEpisodes,
-                    )
-                    TvButton(
-                        label = "弹幕",
+                        label = "弹幕开关",
                         height = 48.dp,
                         fontSize = 16,
                         onTap = { vm.toggleDanmu(); ui.poke() },
@@ -983,12 +982,6 @@ private fun FullscreenPlayer(
                         height = 48.dp,
                         fontSize = 16,
                         onTap = onDanmuSetting,
-                    )
-                    TvButton(
-                        label = "云搜",
-                        height = 48.dp,
-                        fontSize = 16,
-                        onTap = onDanmuSearch,
                     )
                 }
                 Row(

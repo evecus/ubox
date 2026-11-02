@@ -397,12 +397,11 @@ internal fun BoxScope.MiniControls(
  * 全屏控制层 (对照 NovaBox player_vod_control_view.xml 的 fs_function_row):
  *   顶行 = 返回 (退出全屏) + 片名·集名;
  *   底行 = 时间 + 进度条 + 总时长 + 退出全屏;
- *   功能行 = 播放/暂停 · 下一集 · 弹幕 · 倍速 · 画面 · 选集 (等分, 与 NovaBox 一致).
+ *   功能行 = 下一集 · 弹幕开关 · 倍速 · 画面 · 选集 (等分, 与 NovaBox 一致).
  */
 @Composable
 internal fun BoxScope.FullscreenControls(
     title: String,
-    playing: Boolean,
     positionMs: Long,
     playPosMs: Long,
     durationMs: Long,
@@ -412,7 +411,6 @@ internal fun BoxScope.FullscreenControls(
     scaleType: Int,
     danmuOpen: Boolean,
     onBack: () -> Unit,
-    onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onSeek: (Long) -> Unit,
     onPreview: (Long?) -> Unit,
@@ -470,15 +468,14 @@ internal fun BoxScope.FullscreenControls(
             modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FsIconButton(
-                icon = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                desc = if (playing) "暂停" else "播放",
-                onClick = onPlayPause,
-            )
             if (hasNext) {
                 FsIconButton(icon = Icons.Filled.SkipNext, desc = "下一集", onClick = onNext)
             }
-            FsTextButton(text = if (danmuOpen) "弹幕 开" else "弹幕 关", selected = danmuOpen, onClick = onToggleDanmu)
+            FsTextButton(
+                text = if (danmuOpen) "弹幕开关 开" else "弹幕开关 关",
+                selected = danmuOpen,
+                onClick = onToggleDanmu,
+            )
             FsTextButton(
                 text = "倍速 ${PlayerOptions.speedLabel(speed)}",
                 selected = speed != 1.0f,
