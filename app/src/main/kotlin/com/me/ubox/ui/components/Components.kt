@@ -1,0 +1,838 @@
+package com.me.ubox.ui.components
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.BrokenImage
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.me.ubox.TvMode
+import com.me.ubox.data.VodItem
+import com.me.ubox.data.picUrlAndHeaders
+import com.me.ubox.ui.theme.LiveColors
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withContext
+
+/**
+ * 当前页签是否可见 (由 MainShell 的 KeepAliveStack 提供, 对照 Flutter IndexedStack
+ * 外包 ExcludeFocus 的语义).
+ *
+ * 背景: Compose 的 `focusProperties { canFocus = false }` 按官方文档可以禁用子树,
+ * 但实测 (Google 工程师确认, issue 319412360) 只对节点本身生效, 对子树/Lazy 列表
+ * 内容无效 —— 无法像 Flutter ExcludeFocus 那样整树排除. 所以:
+ *   - 经由 [TvFocusable]/[TvButton] 的控件: 由 enabled 逻辑统一收口;
+ *   - 页面里的原生可聚焦控件 (clickable/TextField/Switch/IconButton):
+ *     用 [pageFocusGuard] 精确加在控件节点上.
+ */
+val LocalPageVisible = compositionLocalOf { true }
+
+/**
+ * 页签不可见时把本节点排除出焦点遍历 (TV).
+ * 注意必须加在可聚焦控件自身的节点上 (canFocus 不向子树传播).
+ */
+@Composable
+fun Modifier.pageFocusGuard(): Modifier {
+    if (LocalPageVisible.current) return this
+    return this.focusProperties { canFocus = false }
+}
+
+/**
+ * 沉浸式系统栏 (对照 Flutter `SystemChrome.setEnabledSystemUIMode`):
+ * [immersive] = true 时隐藏状态栏/导航栏 (sticky: 划入临时显示, BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+ * [immersive] 变回 false 或离开组合时恢复显示 (对照 dispose 里的 edgeToEdge).
+ * 仅在全屏播放/直播等场景使用.
+ */
+@Composable
+fun ImmersiveSystemBarsEffect(immersive: Boolean) {
+    val view = LocalView.current
+    DisposableEffect(immersive) {
+        val window = (view.context.findActivity())?.window
+        if (immersive && window != null) {
+            // 真全屏: 内容延伸到系统栏/刘海(挖孔)区域下方, 否则刘海侧会留黑边.
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            if (android.os.Build.VERSION.SDK_INT >= 28) {
+                val lp = window.attributes
+                lp.layoutInDisplayCutoutMode =
+                    if (android.os.Build.VERSION.SDK_INT >= 30)
+                        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                    else
+                        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                window.attributes = lp
+            }
+            // 去掉系统栏半透明遮罩 (状态栏/导航栏"阴影").
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                window.isNavigationBarContrastEnforced = false
+            }
+            val controller = WindowCompat.getInsetsController(window, view)
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose {
+            if (window != null) {
+                WindowCompat.getInsetsController(window, view)
+                    .show(WindowInsetsCompat.Type.systemBars())
+                if (immersive && android.os.Build.VERSION.SDK_INT >= 28) {
+                    val lp = window.attributes
+                    lp.layoutInDisplayCutoutMode =
+                        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+                    window.attributes = lp
+                }
+            }
+        }
+    }
+}
+
+private tailrec fun android.content.Context.findActivity(): android.app.Activity? =
+    when (this) {
+        is android.app.Activity -> this
+        is android.content.ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
+
+/**
+ * 遥控器可聚焦控件 (TV 焦点效果对照 Flutter 版 TvFocusable / dart_simple_live HighlightWidget):
+ *   焦点态 = 白色 2dp 描边 + 4% 放大 (160ms) + 白色光晕阴影;
+ *   OK/确定键 (enter/select/space/dpadCenter/gameButtonA) 与触摸点击等价.
+ * 手机模式下退化为普通 clickable (无焦点装饰).
+ */
+@Composable
+fun TvFocusable(
+    onTap: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    autofocus: Boolean = false,
+    radius: Dp = 8.dp,
+    focusScale: Float = 1.04f,
+    borderColor: Color = Color.White,
+    showBorder: Boolean = true,
+    onLongPress: (() -> Unit)? = null,
+    onFocusChanged: (Boolean) -> Unit = {},
+    content: @Composable () -> Unit,
+) {
+    // 遥控器焦点交互只在真 TV 生效; 平板 (TV 布局 + 触摸) 与手机一样退化为普通点击.
+    val tv by TvMode.isRemote.collectAsStateWithLifecycle()
+    // 所在页签不可见 (KeepAliveStack 的隐藏页) 时整体退出焦点遍历 (对照 Flutter ExcludeFocus).
+    val focusEnabled = enabled && LocalPageVisible.current
+    if (!tv) {
+        Box(
+            modifier = modifier.then(
+                if (onLongPress != null) {
+                    Modifier.pointerInput(onTap, onLongPress) {
+                        detectTapGestures(
+                            onTap = { onTap() },
+                            onLongPress = { onLongPress() },
+                        )
+                    }
+                } else {
+                    Modifier.clickable(enabled = enabled, onClick = onTap)
+                }
+            ),
+        ) { content() }
+        return
+    }
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(autofocus) {
+        // 只在可见时请求: 隐藏页的 autofocus 不能抢走可见页焦点 (enabled=false 时
+        // requestFocus 本身无效, 这里显式跳过, 且 visibility 变化不重触发).
+        if (autofocus && focusEnabled) {
+            // 懒列表 (LazyColumn) 里的条目: 效果可能先于节点挂载执行, 此时 requestFocus 会抛
+            // IllegalStateException("FocusRequester is not initialized") 直接闪退.
+            // 等几帧重试, 失败也只放弃, 不能崩.
+            repeat(8) {
+                androidx.compose.runtime.withFrameNanos { }
+                val ok = try {
+                    focusRequester.requestFocus()
+                    true
+                } catch (_: IllegalStateException) {
+                    false
+                }
+                if (ok) return@LaunchedEffect
+            }
+        }
+    }
+    LaunchedEffect(focused) { onFocusChanged(focused) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) focusScale else 1f,
+        animationSpec = tween(durationMillis = 160),
+        label = "tv-focus-scale",
+    )
+    Box(
+        modifier = modifier
+            .focusRequester(focusRequester)
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown && isTvSelectKey(event.key)) {
+                    onTap()
+                    true
+                } else {
+                    false
+                }
+            }
+            .focusable(interactionSource = interactionSource, enabled = focusEnabled)
+            .pointerInput(enabled, onTap, onLongPress) {
+                if (!enabled) return@pointerInput
+                detectTapGestures(
+                    onTap = { onTap() },
+                    onLongPress = { onLongPress?.invoke() },
+                )
+            }
+            .then(
+                if (focused) {
+                    Modifier
+                        .scale(scale)
+                        .shadow(
+                            elevation = 8.dp,
+                            shape = RoundedCornerShape(radius),
+                            ambientColor = Color.White,
+                            spotColor = Color.White,
+                        )
+                        .then(
+                            if (showBorder) {
+                                Modifier.border(2.dp, borderColor, RoundedCornerShape(radius))
+                            } else {
+                                Modifier
+                            }
+                        )
+                } else {
+                    Modifier
+                }
+            )
+    ) { content() }
+}
+
+/** 遥控器 OK/确定键集合 (对照 Flutter: enter/select/space/gameButtonA). */
+fun isTvSelectKey(key: Key): Boolean {
+    return key == Key.Enter ||
+        key == Key.NumPadEnter ||
+        key == Key.DirectionCenter ||
+        key == Key.Spacebar ||
+        key == Key.ButtonA
+}
+
+/**
+ * TV 输入框的"输入法激活"状态 (见 [Modifier.tvConfirmKeyboard]).
+ *
+ * 遥控器上"焦点落到输入框"和"打开输入法"是两件事: 直接聚焦就弹输入法会把整屏
+ * 挡掉, 方向键也没法再浏览其它设置项. 这里把它拆开 —— 聚焦只是选中, 按确认键
+ * 才 [open] 输入法; 焦点移出即 [close], 下次聚焦仍需再按确认键.
+ */
+class TvInputState internal constructor() {
+    /** true = 已激活 (字段可编辑, 输入法已弹出). */
+    var editing by mutableStateOf(false)
+        private set
+
+    fun open() {
+        editing = true
+    }
+
+    fun close() {
+        editing = false
+    }
+}
+
+@Composable
+fun rememberTvInputState(): TvInputState = remember { TvInputState() }
+
+/**
+ * 遥控器输入框修饰: 焦点移到输入框不弹输入法, 按确认键才弹 (见 [TvInputState]).
+ *
+ * 配合 `readOnly = !state.editing` 使用 —— 未激活时字段只读, 输入法不会因聚焦弹出;
+ * 确认键按下后转为可编辑并主动拉起输入法. 焦点移出自动回到未激活.
+ */
+@Composable
+fun Modifier.tvConfirmKeyboard(state: TvInputState): Modifier {
+    val keyboard = LocalSoftwareKeyboardController.current
+    return this
+        .onFocusChanged { if (!it.isFocused) state.close() }
+        .onPreviewKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+            if (!isTvSelectKey(event.key)) return@onPreviewKeyEvent false
+            // 已激活时放行: 确认键交给输入法 / ImeAction 处理.
+            if (state.editing) return@onPreviewKeyEvent false
+            state.open()
+            keyboard?.show()
+            true
+        }
+}
+
+/**
+ * 遥控器按钮: 图标 + 文字 (对照 Flutter 版 TvButton):
+ * 焦点/选中态 = 白底黑字, 平时 = 深灰底白字.
+ */
+@Composable
+fun TvButton(
+    label: String,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    onTap: (() -> Unit)? = null,
+    autofocus: Boolean = false,
+    selected: Boolean = false,
+    height: Dp = 52.dp,
+    fontSize: Int = 16,
+    fillWidth: Boolean = false,
+) {
+    var focusedState by remember { mutableStateOf(false) }
+    TvFocusable(
+        onTap = { onTap?.invoke() },
+        modifier = modifier.height(height),
+        enabled = onTap != null,
+        autofocus = autofocus,
+        radius = 8.dp,
+        showBorder = false,
+        onFocusChanged = { focusedState = it },
+    ) {
+        val active = focusedState || selected
+        // 默认宽度包裹内容: 原先 fillMaxSize 会在 Row 里吃掉全部剩余宽度,
+        // 导致同排后面的按钮 (搜索/历史等) 被挤出屏幕. 需要撑满时传 fillWidth = true.
+        Box(
+            modifier = Modifier
+                .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
+                .fillMaxHeight()
+                .background(
+                    color = if (active) Color.White else Color(0x6C3D3D3D),
+                    shape = RoundedCornerShape(8.dp),
+                )
+                .padding(horizontal = 14.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                if (icon != null) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.size((fontSize + 6).dp),
+                        tint = if (active) Color.Black else Color.White.copy(alpha = 0.7f),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    text = label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.W500,
+                    color = if (active) Color.Black else Color.White,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = fontSize.sp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 网络图片 (海报/封面): 支持 FongMi 风格 `url@User-Agent=..@Referer=..` 后缀拆解.
+ * 加载中/失败有占位.
+ */
+@Composable
+fun NetworkImage(
+    url: String,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop,
+    placeholder: @Composable () -> Unit = { DefaultImagePlaceholder() },
+) {
+    val (cleanUrl, headers) = remember(url) { picUrlAndHeaders(url) }
+    val bitmap by produceState<ImageBitmap?>(initialValue = null, cleanUrl) {
+        value = withContext(Dispatchers.IO) {
+            ImageLoader.load(cleanUrl, headers)?.asImageBitmap()
+        }
+    }
+    val bmp = bitmap
+    if (bmp != null) {
+        androidx.compose.foundation.Image(
+            bitmap = bmp,
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = contentScale,
+            filterQuality = FilterQuality.Medium,
+        )
+    } else {
+        Box(modifier = modifier) { placeholder() }
+    }
+}
+
+@Composable
+fun DefaultImagePlaceholder(
+    icon: ImageVector = Icons.Filled.Movie,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color.Gray,
+            modifier = Modifier.size(28.dp),
+        )
+    }
+}
+
+/**
+ * 海报卡片 (对照 Flutter 版 home_page._poster):
+ * 圆角封面 + 左上角角标 (年份/来源) + 底部备注分片 + 片名栏.
+ */
+@Composable
+fun VodPoster(
+    item: VodItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    showYearBadge: Boolean = false,
+    badgeText: String? = null,
+    badgeBg: Color = Color(0xBD0CADE2),
+    tvSizes: Boolean = false,
+    autofocus: Boolean = false,
+) {
+    var note = item.remark?.trim() ?: ""
+    if (note.isEmpty() && !item.score.isNullOrEmpty()) {
+        note = "评分 ${item.score}"
+    }
+    val year = item.year?.trim() ?: ""
+    TvFocusable(onTap = onClick, modifier = modifier, radius = 8.dp, autofocus = autofocus) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(if (tvSizes) 0.68f else 0.62f)
+                .clip(RoundedCornerShape(8.dp)),
+        ) {
+            NetworkImage(
+                url = item.cover,
+                modifier = Modifier.fillMaxSize(),
+                placeholder = { DefaultImagePlaceholder() },
+            )
+            if (showYearBadge && year.isNotEmpty()) {
+                Badge(
+                    text = year,
+                    bg = Color.Black.copy(alpha = 0.54f),
+                    modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
+                    tv = tvSizes,
+                )
+            }
+            if (!badgeText.isNullOrEmpty()) {
+                Badge(
+                    text = badgeText,
+                    bg = badgeBg,
+                    modifier = Modifier.align(Alignment.TopStart).padding(4.dp),
+                    tv = tvSizes,
+                )
+            }
+            Column(modifier = Modifier.align(Alignment.BottomStart)) {
+                if (note.isNotEmpty()) {
+                    Badge(
+                        text = note,
+                        bg = Color.Black.copy(alpha = 0.54f),
+                        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+                        tv = tvSizes,
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.54f))
+                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                ) {
+                    Text(
+                        text = item.name,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = (if (tvSizes) 14 else 12).sp,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 角标小胶囊 (对照 Flutter 版 _badge). */
+@Composable
+fun Badge(
+    text: String,
+    bg: Color,
+    modifier: Modifier = Modifier,
+    tv: Boolean = false,
+) {
+    Box(
+        modifier = modifier
+            .background(color = bg, shape = RoundedCornerShape(4.dp))
+            .padding(horizontal = 5.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = Color.White,
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = (if (tv) 14 else 10).sp,
+            ),
+        )
+    }
+}
+
+/** 通用加载/错误/空态. */
+@Composable
+fun LoadingBox(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(32.dp))
+    }
+}
+
+@Composable
+fun ErrorBox(
+    message: String,
+    onRetry: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            if (onRetry != null) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onRetry) { Text("重试") }
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyBox(text: String, modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(text = text, color = Color.Gray, textAlign = TextAlign.Center)
+    }
+}
+
+/** 分组小标题 (设置页分区). */
+@Composable
+fun SectionHeader(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        modifier = modifier,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+        style = MaterialTheme.typography.titleSmall,
+    )
+}
+
+/** 直播列表项 (对照原版 item_live_channel + shape_live_focus + LiveChannelItemAdapter 配色). */
+@Composable
+fun LiveListItem(
+    text: String,
+    num: String? = null,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    large: Boolean = false,
+    autofocus: Boolean = false,
+) {
+    var focused by remember { mutableStateOf(false) }
+    // 焦点 = #1890FF 实底 (黑字); 选中 = #331890FF 底 + #1890FF 1dp 描边 (#1890FF 字);
+    // 常规 = 透明底. 原版常规是黑字 (直播页浅色底), 本工程暗色主题故用白字.
+    val bg = when {
+        focused -> LiveColors.Blue
+        selected -> LiveColors.SelectedBg
+        else -> Color.Transparent
+    }
+    val borderColor = if (focused || !selected) Color.Transparent else LiveColors.Blue
+    val textColor = when {
+        focused -> Color.Black
+        selected -> LiveColors.Blue
+        else -> Color.White
+    }
+    TvFocusable(
+        onTap = onClick,
+        modifier = modifier,
+        autofocus = autofocus,
+        radius = 6.dp,
+        focusScale = 1.0f, // 原版焦点无缩放
+        showBorder = false, // 自绘焦点底色
+        onFocusChanged = { focused = it },
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(horizontal = 2.dp, vertical = 2.dp)
+                .background(bg, RoundedCornerShape(6.dp))
+                .then(
+                    if (selected) {
+                        Modifier.border(1.dp, borderColor, RoundedCornerShape(6.dp))
+                    } else {
+                        Modifier
+                    }
+                )
+                .padding(horizontal = 6.dp, vertical = if (large) 10.dp else 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (num != null) {
+                    Text(
+                        text = num,
+                        color = textColor,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = (if (large) 14 else 11).sp,
+                        ),
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(
+                    text = text,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = textColor,
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = (if (large) 17 else 13).sp,
+                    ),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 视频表面视图: ExoPlayer setVideoSurfaceView 挂载.
+ * [aspectRatio] 非空时按视频比例 letterbox (contain); null (比例未知) 时收成 1dp 黑点
+ * 等待比例到达 —— 不能铺满: ijk 的视频输出是"拉伸铺满整个窗口"的 (vout 无比例处理),
+ * 铺满等于强行变形; 比例未知时宁可黑一下也不要显示变形画面.
+ */
+@Composable
+fun VideoSurfaceView(
+    modifier: Modifier = Modifier,
+    aspectRatio: Float? = null,
+    scaleType: Int = 0,
+    videoWidthPx: Int = 0,
+    videoHeightPx: Int = 0,
+    onSurfaceReady: (android.view.SurfaceView) -> Unit,
+    onSurfaceDispose: () -> Unit,
+) {
+    val context = LocalContext.current
+    val surfaceView = remember { android.view.SurfaceView(context) }
+    DisposableEffect(surfaceView) {
+        val callback = object : android.view.SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: android.view.SurfaceHolder) {
+                onSurfaceReady(surfaceView)
+            }
+            override fun surfaceChanged(h: android.view.SurfaceHolder, f: Int, w: Int, ht: Int) {}
+            override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+                onSurfaceDispose()
+            }
+        }
+        surfaceView.holder.addCallback(callback)
+        onDispose {
+            surfaceView.holder.removeCallback(callback)
+            onSurfaceDispose()
+        }
+    }
+    // 画面比例 (对照 NovaBox/NovaTV 的 SCREEN_SCALE_*): SurfaceView 里视频会被拉伸铺满 Surface,
+    // 所以比例必须由 View 本身的尺寸决定.
+    //   0 默认 = 按视频真实比例适应 (letterbox);  1 = 16:9 适应;  2 = 4:3 适应;
+    //   3 填充 = 拉伸铺满容器;  4 原始 = 视频像素尺寸 (不放大, 超出容器时适应);
+    //   5 裁剪 = 按视频比例铺满容器并裁掉溢出部分.
+    // 比例未知时 (内核还没上报宽高) 用 1dp 占位: 不能用 fillMaxSize (那就是拉伸变形),
+    // 也不能用 0dp (ANativeWindow 不接受 0 尺寸的 buffer geometry).
+    BoxWithConstraints(
+        modifier = modifier.clipToBounds(),
+        contentAlignment = Alignment.Center,
+    ) {
+        val cw = maxWidth
+        val ch = maxHeight
+        val natural = if (aspectRatio != null && aspectRatio > 0f) aspectRatio else 0f
+        val density = androidx.compose.ui.platform.LocalDensity.current
+
+        // 适应 (contain): 容器比目标宽 -> 以高为准, 否则以宽为准.
+        fun contain(ratio: Float): Modifier =
+            if (cw / ch > ratio) Modifier.size(ch * ratio, ch) else Modifier.size(cw, cw / ratio)
+
+        // 铺满 (cover): 与 contain 相反, 超出部分由 clipToBounds 裁掉.
+        fun cover(ratio: Float): Modifier =
+            if (cw / ch > ratio) Modifier.requiredSize(cw, cw / ratio) else Modifier.requiredSize(ch * ratio, ch)
+
+        // 比例未知时的占位 (黑屏等待).
+        fun pending(): Modifier = Modifier.size(1.dp)
+
+        val surfaceModifier: Modifier = when (scaleType) {
+            1 -> contain(16f / 9f)
+            2 -> contain(4f / 3f)
+            3 -> Modifier.fillMaxSize()
+            4 -> if (videoWidthPx > 0 && videoHeightPx > 0 && natural > 0f) {
+                val w = with(density) { (natural * videoHeightPx).toDp() }
+                val h = with(density) { videoHeightPx.toDp() }
+                if (w <= cw && h <= ch) Modifier.size(w, h) else contain(natural)
+            } else {
+                pending()
+            }
+            5 -> if (natural > 0f) cover(natural) else pending()
+            else -> if (natural > 0f) contain(natural) else pending()
+        }
+        AndroidView(
+            factory = { surfaceView },
+            modifier = surfaceModifier,
+        )
+    }
+}
+
+/** 进度条 + 时间文本 (播放页控制条). */
+@Composable
+fun PlayerProgressRow(
+    positionMs: Long,
+    durationMs: Long,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val maxMs = if (durationMs > 0) durationMs else 1L
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = formatDuration(positionMs),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.width(60.dp),
+        )
+        Slider(
+            value = positionMs.coerceIn(0L, maxMs).toFloat(),
+            onValueChange = { onSeek(it.toLong()) },
+            valueRange = 0f..maxMs.toFloat(),
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = formatDuration(durationMs),
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.width(60.dp),
+        )
+    }
+}
+
+fun formatDuration(ms: Long): String {
+    val totalSeconds = ms / 1000
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    val mm = m.toString().padStart(2, '0')
+    val ss = s.toString().padStart(2, '0')
+    return if (h > 0) "$h:$mm:$ss" else "$m:$ss"
+}
+
+/**
+ * 二级页面顶部 AppBar (返回 + 标题 + actions).
+ * [onBack] = null 时不显示返回按钮 —— TV 遥控器用返回键, 页面里不放返回按钮.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SimpleTopBar(
+    title: String,
+    onBack: (() -> Unit)?,
+    actions: @Composable () -> Unit = {},
+) {
+    TopAppBar(
+        title = {
+            Text(
+                text = title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        navigationIcon = {
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(imageVector = Icons.Filled.ArrowBack, contentDescription = "返回")
+                }
+            }
+        },
+        actions = { actions() },
+    )
+}
+
+/** StateFlow 收集的兼容别名. */
+@Composable
+fun <T> StateFlow<T>.collectAsState(): androidx.compose.runtime.State<T> =
+    collectAsStateWithLifecycle()

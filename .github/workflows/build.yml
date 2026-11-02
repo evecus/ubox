@@ -1,0 +1,58 @@
+name: build arm64
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+
+      # 正式签名 keystore (可选 secret). 未配置时跳过,
+      # build.gradle 自动回退 runner 预置的 debug keystore, release 仍可安装.
+      - name: Decode keystore
+        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+
+      - name: Build signed release APK
+        env:
+          NOVA_ABI_FILTERS: arm64-v8a
+          RELEASE_STORE_FILE: ${{ github.workspace }}/release.keystore
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f release.keystore
+
+      - name: Move and rename APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/*.apk out/ubox-arm64.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: test
+          files: out/ubox-arm64.apk
