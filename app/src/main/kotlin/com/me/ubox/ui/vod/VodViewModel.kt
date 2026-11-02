@@ -18,7 +18,6 @@ import com.me.ubox.danmaku.DanmakuLoadResult
 import com.me.ubox.danmaku.DanmakuManager
 import com.me.ubox.danmaku.DanmuSettings
 import com.me.ubox.engine.EngineClient
-import com.me.ubox.player.DecoderPrefs
 import com.me.ubox.player.PlayRequest
 import com.me.ubox.player.PlayerEngine
 import com.me.ubox.player.PlayerEngines
@@ -94,18 +93,14 @@ class VodViewModel(
     // ---------------------------------------------------------------- 播放器
 
     /**
-     * 播放内核: 按设置页"解码方式"选择 ExoPlayer 或 IjkPlayer (PlayerEngines.create),
-     * 上层只依赖 [PlayerEngine] 接口.
-     * var: 设置页换内核 (ExoPlayer ↔ IjkPlayer) 时整体重建 (见 [watchDecoderMode]).
+     * 播放内核: ExoPlayer (PlayerEngines.create), 上层只依赖 [PlayerEngine] 接口.
+     * 解码方式在设置页改动后, 下次 open (换集/换源/重进页面) 生效.
      */
     private var engine: PlayerEngine = PlayerEngines.create()
 
     /** 当前媒体项 (换内核后按它续播) 与已挂载的表面. */
     private var currentRequest: PlayRequest? = null
     private var surface: android.view.Surface? = null
-
-    /** 最近一次创建内核时的解码方式 (用于识别"内核类别是否变了"). */
-    private var currentMode = DecoderPrefs.current
 
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
@@ -231,44 +226,8 @@ class VodViewModel(
     init {
         engine.setSpeed(cfg0.speed)
         engine.listener = engineListener
-        watchDecoderMode()
         startPolling()
         loadDetail()
-    }
-
-    /**
-     * 设置页改了解码方式: 换内核类别 (ExoPlayer ↔ IjkPlayer) 时无法在实例上改,
-     * 释放旧内核 → 建新内核 → 从当前位置续播同一地址, 让设置立即生效.
-     * 同一内核内切换 (如 IJK 硬解 → IJK 软解) 下次 open 即生效, 不打断当前播放.
-     */
-    private fun watchDecoderMode() {
-        viewModelScope.launch {
-            DecoderPrefs.mode.collect { mode ->
-                if (mode == currentMode) return@collect
-                val crossKernel = DecoderPrefs.isIjk(mode) != DecoderPrefs.isIjk(currentMode)
-                currentMode = mode
-                if (!crossKernel) return@collect
-                rebuildEngine()
-            }
-        }
-    }
-
-    private fun rebuildEngine() {
-        val req = currentRequest ?: return
-        val pos = engine.currentPosition
-        val wasPlaying = engine.isPlaying
-        engine.listener = null
-        engine.release()
-        engine = PlayerEngines.create()
-        engine.listener = engineListener
-        engine.setSurface(surface)
-        engine.setSpeed(if (_boosting.value) PlayerOptions.BOOST_SPEED else _speed.value)
-        // 换内核不重走片头/续播逻辑, 直接从当前位置继续.
-        pendingSeekMs = -1
-        startSkipApplied = true
-        _error.value = ""
-        engine.open(req.copy(startMs = pos))
-        if (wasPlaying) engine.play()
     }
 
     // ================= 详情加载 =================

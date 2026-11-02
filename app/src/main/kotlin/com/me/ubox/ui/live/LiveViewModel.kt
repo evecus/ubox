@@ -62,18 +62,15 @@ class LiveViewModel : ViewModel() {
 
     // ---- 播放器 ----
     /**
-     * 播放内核: 按设置页"解码方式"选择 ExoPlayer 或 IjkPlayer.
-     * 直播多为 flv/rtmp/m3u8, IJK 对 flv/rtmp 支持更好 (ExoPlayer 不支持 flv).
-     * var: 设置页换内核 (ExoPlayer ↔ IjkPlayer) 时整体重建 (见 [watchDecoderMode]).
+     * 播放内核: ExoPlayer (PlayerEngines.create), 上层只依赖 [PlayerEngine] 接口.
+     * 直播协议覆盖: HLS (hls 模块), FLV/TS (FlvExtractor/TsExtractor), RTMP (rtmp 数据源).
+     * 解码方式在设置页改动后, 下次 open (换台/换源/重进页面) 生效.
      */
     private var engine: PlayerEngine = PlayerEngines.create()
 
     /** 当前媒体项 (换内核后按它重连) 与已挂载的表面. */
     private var currentRequest: PlayRequest? = null
     private var surface: android.view.Surface? = null
-
-    /** 最近一次创建内核时的解码方式. */
-    private var currentMode = com.me.ubox.player.DecoderPrefs.current
 
     private val _playing = MutableStateFlow(false)
     val playing: StateFlow<Boolean> = _playing.asStateFlow()
@@ -176,38 +173,6 @@ class LiveViewModel : ViewModel() {
 
     init {
         engine.listener = engineListener
-        watchDecoderMode()
-    }
-
-    /**
-     * 设置页改了解码方式: 换内核类别 (ExoPlayer ↔ IjkPlayer) 时重建内核并重连当前频道,
-     * 让设置立即生效 (直播没有进度, 直接重连).
-     */
-    private fun watchDecoderMode() {
-        viewModelScope.launch {
-            com.me.ubox.player.DecoderPrefs.mode.collect { mode ->
-                if (mode == currentMode) return@collect
-                val crossKernel = com.me.ubox.player.DecoderPrefs.isIjk(mode) !=
-                    com.me.ubox.player.DecoderPrefs.isIjk(currentMode)
-                currentMode = mode
-                if (!crossKernel) return@collect
-                rebuildEngine()
-            }
-        }
-    }
-
-    private fun rebuildEngine() {
-        val req = currentRequest ?: return
-        cancelTimers()
-        changeSourceTimes = 0
-        engine.listener = null
-        engine.release()
-        engine = PlayerEngines.create()
-        engine.listener = engineListener
-        engine.setSurface(surface)
-        _buffering.value = true
-        engine.open(req)
-        engine.play()
     }
 
     // ================= 数据加载 =================

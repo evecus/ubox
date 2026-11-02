@@ -522,7 +522,7 @@ fun SettingsScreen() {
                 Text(
                     "${com.me.ubox.player.DecoderPrefs.label(decoderMode)}: " +
                         com.me.ubox.player.DecoderPrefs.detail(decoderMode) +
-                        "\n点播与直播通用; 换内核会自动从当前位置续播"
+                        "\n点播与直播通用; 换集/换源/重进播放页后生效"
                 )
             },
             leadingContent = { Icon(Icons.Filled.Memory, contentDescription = null) },
@@ -646,7 +646,7 @@ fun SettingsScreen() {
         Spacer(Modifier.height(6.dp))
         Text(
             text = "UBox (Jetpack Compose 版)\n" +
-                "播放器: ExoPlayer (media3) / IjkPlayer (ijkplayer)\n" +
+                "播放器: ExoPlayer (media3)\n" +
                 "爬虫引擎: QuickJS + OkHttp (Kotlin)\n" +
                 "本地代理端口: 9978",
             style = MaterialTheme.typography.bodySmall,
@@ -694,7 +694,7 @@ fun SettingsScreen() {
         )
     }
     if (showDecoderPicker) {
-        // ExoPlayer 三项 + IjkPlayer 四项 (自动 / 硬解 / 硬解不含H.265 / 软解)
+        // ExoPlayer 三项 (自动 / 硬解 / 软解)
         val options = com.me.ubox.player.DecoderPrefs.options()
         SinglePickSheet(
             title = "解码方式",

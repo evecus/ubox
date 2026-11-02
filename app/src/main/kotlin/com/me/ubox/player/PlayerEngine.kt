@@ -43,8 +43,7 @@ interface PlayerListener {
 }
 
 /**
- * 播放内核抽象: 上层 (点播/直播 ViewModel) 只依赖本接口,
- * 由 [PlayerEngines.create] 按 [DecoderPrefs] 决定实际内核 (ExoPlayer / IjkPlayer).
+ * 播放内核抽象: 上层 (点播/直播 ViewModel) 只依赖本接口.
  *
  * 生命周期: [open] → [play] → … → [stop] (换源) / [release] (退出页面).
  * 表面可随时 [setSurface] 挂载/摘除 (全屏切换、页面重建后重新挂载).
@@ -94,11 +93,6 @@ object PlayerEngines {
     /** 没有可用视频解码器时的错误码 (与内核无关的统一码). */
     const val ERROR_NO_DECODER = -1000
 
-    /**
-     * 按当前解码方式创建内核:
-     *   ijk_* → [IjkEngine]; 其余 → [ExoEngine].
-     * 解码方式在设置页改动后, 下次创建内核 (进入播放页/直播页) 生效.
-     */
-    fun create(): PlayerEngine =
-        if (DecoderPrefs.isIjk()) IjkEngine() else ExoEngine()
+    /** 创建内核 (ExoPlayer, 解码方式由 [DecoderPrefs] 控制). */
+    fun create(): PlayerEngine = ExoEngine()
 }

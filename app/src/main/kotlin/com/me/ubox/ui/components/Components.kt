@@ -684,8 +684,8 @@ fun LiveListItem(
 /**
  * 视频表面视图: ExoPlayer setVideoSurfaceView 挂载.
  * [aspectRatio] 非空时按视频比例 letterbox (contain); null (比例未知) 时收成 1dp 黑点
- * 等待比例到达 —— 不能铺满: ijk 的视频输出是"拉伸铺满整个窗口"的 (vout 无比例处理),
- * 铺满等于强行变形; 比例未知时宁可黑一下也不要显示变形画面.
+ * 等待比例到达 —— 不能铺满: 比例未知就铺满等于强行拉伸变形;
+ * 比例未知时宁可黑一下也不要显示变形画面.
  */
 @Composable
 fun VideoSurfaceView(

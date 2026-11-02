@@ -25,7 +25,7 @@ object PlayerHeaders {
     var current: Map<String, String> = emptyMap()
 }
 
-/** 播放器 DataSource 工厂: DefaultHttpDataSource + 头注入包装, 支持跨协议重定向. */
+/** 播放器 DataSource 工厂: OkHttp + 头注入 (http/https, 支持跨协议重定向). */
 @UnstableApi
 object PlayerDataSourceFactory : DataSource.Factory {
     override fun createDataSource(): DataSource = HeaderedDataSource()
