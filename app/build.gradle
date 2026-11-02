@@ -21,7 +21,8 @@ if (abiList.isEmpty() || !unknownAbis.isEmpty()) {
 
 android {
     namespace = "com.me.ubox"
-    compileSdk = 35
+    // media3 1.11.x 的 aar-metadata 要求 minCompileSdk=36
+    compileSdk = 36
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -107,14 +108,21 @@ dependencies {
 
     // ExoPlayer (media3) 播放内核, 替代原 Flutter 版的 media_kit/mpv.
     // 视频表面用原生 SurfaceView + setVideoSurfaceView (自绘控制层/弹幕层), 不引 media3-ui.
-    implementation "androidx.media3:media3-exoplayer:1.5.1"
-    implementation "androidx.media3:media3-common:1.5.1"
+    implementation "androidx.media3:media3-exoplayer:1.11.1"
+    implementation "androidx.media3:media3-common:1.11.1"
     // HLS 独立模块: exoplayer 核心只含 progressive (mp4/flv 等),
     // .m3u8 直链与本地代理 (do=m3u8/do=live) 的 HLS 流必须显式引入,
     // 否则 DefaultMediaSourceFactory 创建不出 HlsMediaSource.
-    implementation "androidx.media3:media3-exoplayer-hls:1.5.1"
+    implementation "androidx.media3:media3-exoplayer-hls:1.11.1"
     // 播放走 OkHttp (信任所有证书 + 共享 DNS + IDN 域名), 对齐原版 mpv 不校验 TLS 的行为.
-    implementation "androidx.media3:media3-datasource-okhttp:1.5.1"
+    implementation "androidx.media3:media3-datasource-okhttp:1.11.1"
+
+    // NextLib: media3 的 FFmpeg/dav1d 软解扩展 (Next Player 的库, Maven Central 预编译).
+    // 版本号格式 = media3版本-nextlib版本, 必须与上面的 media3 版本一致.
+    // 提供: FFmpeg 视频 (H.264/H.265/VP8/VP9) + dav1d AV1 软解渲染器,
+    //       FFmpeg 音频 (AC3/EAC3/DTS/TrueHD/FLAC/ALAC 等) 渲染器.
+    // 注意: GPL-3.0 许可; ffmpeg native so 四个 ABI 全带, abiFilters 只留 arm 后实际增量约 10~15MB.
+    implementation "io.github.anilbeesetti:nextlib-media3ext:1.11.1-0.17.0"
 
     implementation "androidx.collection:collection:1.4.0"
 

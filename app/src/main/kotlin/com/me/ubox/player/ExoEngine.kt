@@ -54,10 +54,9 @@ class ExoEngine : PlayerEngine {
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                // 自动模式: 解码器相关错误 → 切软解重试, 不算失败.
+                // 自动模式: 解码器相关错误 → 逐级降级重试 (软 MediaCodec → FFmpeg), 不算失败.
                 if (decoder.onPlayerError(exo, error)) {
                     ready = false
-                    listener?.onNotice("硬解失败, 已切换软解")
                     return
                 }
                 listener?.onBuffering(false)
