@@ -1,5 +1,7 @@
 package com.me.ubox.ui.home
 
+import androidx.compose.ui.focus.focusProperties
+import com.me.ubox.ui.components.tvFocusFrame
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -210,7 +212,7 @@ fun HomeScreen(
                             Spacer(Modifier.height(8.dp))
                             OutlinedButton(
                                 onClick = vm::retryHomeContent,
-                                modifier = Modifier.pageFocusGuard(),
+                                modifier = Modifier.pageFocusGuard().tvFocusFrame(),
                             ) { Text("重试") }
                         }
                     }
@@ -395,7 +397,8 @@ private fun HomeTabBar(
                         FilterChip(
                             selected = selectedTab,
                             onClick = { onSelect(i) },
-                            modifier = Modifier.pageFocusGuard(),
+                            // 外层 TvFocusable 负责焦点与白框; 芯片自身不再成为焦点目标 (否则焦点落在芯片上只剩灰色状态层)
+                            modifier = Modifier.pageFocusGuard().focusProperties { canFocus = false },
                             label = {
                                 Text(
                                     text = tab.name,

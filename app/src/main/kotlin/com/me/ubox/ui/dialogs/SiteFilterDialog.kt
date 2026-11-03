@@ -1,5 +1,6 @@
 package com.me.ubox.ui.dialogs
 
+import com.me.ubox.ui.components.tvFocusFrame
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -92,7 +93,11 @@ fun SiteBlacklistSheet(
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = { submit() }, enabled = input.trim().isNotEmpty()) { Text("添加") }
+                Button(
+                    onClick = { submit() },
+                    enabled = input.trim().isNotEmpty(),
+                    modifier = Modifier.tvFocusFrame(),
+                ) { Text("添加") }
             }
             LazyColumn(modifier = Modifier.heightIn(max = 360.dp).padding(top = 8.dp)) {
                 if (keywords.isEmpty()) {

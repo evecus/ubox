@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -270,37 +272,91 @@ fun TvFocusable(
                     Modifier
                         .scale(scale)
                         // blbl 焦点绘制 (见 kdoc): 填充底画在内容下, 双描边画在内容上.
-                        .drawWithContent {
-                            val inset = 1.dp.toPx()
-                            // 填充底 (blbl_focus_fill): 透明背景条目呈现深灰底;
-                            // 海报等自带不透明背景的条目被其内容覆盖, 只见描边.
-                            drawRoundRect(
-                                color = FocusFillColor,
-                                topLeft = Offset(inset, inset),
-                                size = Size(size.width - inset * 2, size.height - inset * 2),
-                                cornerRadius = CornerRadius((radius - 1.dp).toPx()),
-                            )
-                            drawContent()
-                            // 外圈阴影描边 (blbl_focus_shadow): 亮背景上压暗一圈提对比.
-                            drawRoundRect(
-                                color = FocusShadowColor,
-                                cornerRadius = CornerRadius(radius.toPx()),
-                                style = Stroke(3.dp.toPx()),
-                            )
-                            // 内圈白描边 (blbl_focus_white)
-                            drawRoundRect(
-                                color = Color.White,
-                                topLeft = Offset(inset, inset),
-                                size = Size(size.width - inset * 2, size.height - inset * 2),
-                                cornerRadius = CornerRadius((radius - 1.dp).toPx()),
-                                style = Stroke(2.dp.toPx()),
-                            )
-                        }
+                        .drawWithContent { drawTvFocusContent(radius) }
                 } else {
                     Modifier
                 }
             )
     ) { content() }
+}
+
+/**
+ * blbl 焦点绘制: 填充底画在内容下, 外圈半透明黑描边 + 内圈白描边画在内容上.
+ * [TvFocusable] 与 [tvFocusFrame] 共用, 保证全 App 焦点样式一致.
+ */
+private fun ContentDrawScope.drawTvFocusContent(radius: Dp) {
+    val inset = 1.dp.toPx()
+    // 填充底 (blbl_focus_fill): 透明背景条目呈现深灰底;
+    // 海报等自带不透明背景的条目被其内容覆盖, 只见描边.
+    drawRoundRect(
+        color = FocusFillColor,
+        topLeft = Offset(inset, inset),
+        size = Size(size.width - inset * 2, size.height - inset * 2),
+        cornerRadius = CornerRadius((radius - 1.dp).toPx()),
+    )
+    drawContent()
+    // 外圈阴影描边 (blbl_focus_shadow): 亮背景上压暗一圈提对比.
+    drawRoundRect(
+        color = FocusShadowColor,
+        cornerRadius = CornerRadius(radius.toPx()),
+        style = Stroke(3.dp.toPx()),
+    )
+    // 内圈白描边 (blbl_focus_white)
+    drawRoundRect(
+        color = Color.White,
+        topLeft = Offset(inset, inset),
+        size = Size(size.width - inset * 2, size.height - inset * 2),
+        cornerRadius = CornerRadius((radius - 1.dp).toPx()),
+        style = Stroke(2.dp.toPx()),
+    )
+}
+
+/**
+ * 给"本身已可聚焦"的 Material 控件 (Button / FilterChip / IconButton / clickable 行 ...)
+ * 加上与 [TvFocusable] 相同的白色焦点框; 不额外增加焦点目标. 仅真 TV (遥控器) 生效.
+ *
+ * 必须直接加在控件的 modifier 上 (即在控件自身焦点节点之外).
+ * 修饰链结构必须恒定: 若按焦点状态增删修饰符, 控件自身的 focusable 节点会被重建导致焦点丢失,
+ * 所以这里恒挂 graphicsLayer + drawWithContent, 仅在绘制时按 focused 切换.
+ */
+@Composable
+fun Modifier.tvFocusFrame(radius: Dp = 8.dp, focusScale: Float = 1.04f): Modifier {
+    val remote by TvMode.isRemote.collectAsStateWithLifecycle()
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (focused) focusScale else 1f,
+        animationSpec = tween(durationMillis = 120),
+        label = "tv-focus-frame-scale",
+    )
+    if (!remote) return this
+    return this
+        .onFocusChanged { focused = it.hasFocus }
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .drawWithContent {
+            if (focused) drawTvFocusContent(radius) else drawContent()
+        }
+}
+
+/**
+ * 可点击行 / 块的 TV 友好版 clickable: TV 下去掉 Material 默认的灰色焦点"阴影"状态层,
+ * 改画白色焦点框并响应 OK 键; 手机 / 平板保持原 clickable.
+ */
+@Composable
+fun Modifier.tvClickable(
+    radius: Dp = 8.dp,
+    focusScale: Float = 1.04f,
+    onClick: () -> Unit,
+): Modifier {
+    val remote by TvMode.isRemote.collectAsStateWithLifecycle()
+    val source = remember { MutableInteractionSource() }
+    val guarded = this.pageFocusGuard()
+    if (!remote) return guarded.clickable(onClick = onClick)
+    return guarded
+        .tvFocusFrame(radius, focusScale)
+        .clickable(interactionSource = source, indication = null, onClick = onClick)
 }
 
 /** blbl 焦点样式色值 (colors.xml: blbl_focus_fill / blbl_focus_shadow). */
@@ -621,7 +677,7 @@ fun ErrorBox(
             )
             if (onRetry != null) {
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = onRetry) { Text("重试") }
+                OutlinedButton(onClick = onRetry, modifier = Modifier.tvFocusFrame()) { Text("重试") }
             }
         }
     }

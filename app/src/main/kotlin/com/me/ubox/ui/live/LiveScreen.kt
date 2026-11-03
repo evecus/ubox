@@ -1,5 +1,6 @@
 package com.me.ubox.ui.live
 
+import com.me.ubox.ui.components.tvFocusFrame
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -322,7 +323,7 @@ private fun NoSourceHint(onGoSettings: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onGoSettings, modifier = Modifier.pageFocusGuard()) { Text("去设置") }
+        Button(onClick = onGoSettings, modifier = Modifier.pageFocusGuard().tvFocusFrame()) { Text("去设置") }
     }
 }
 
@@ -338,7 +339,7 @@ private fun LiveErrorHint(error: String, onRetry: () -> Unit) {
             color = Color.White.copy(alpha = 0.7f),
         )
         Spacer(Modifier.height(16.dp))
-        OutlinedButton(onClick = onRetry, modifier = Modifier.pageFocusGuard()) { Text("重试") }
+        OutlinedButton(onClick = onRetry, modifier = Modifier.pageFocusGuard().tvFocusFrame()) { Text("重试") }
     }
 }
 

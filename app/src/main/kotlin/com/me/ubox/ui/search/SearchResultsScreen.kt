@@ -1,5 +1,6 @@
 package com.me.ubox.ui.search
 
+import com.me.ubox.ui.components.tvClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -274,7 +275,7 @@ private fun SiteFilterTile(
                 color = if (selected) scheme.onSurface else Color.Transparent,
                 shape = RoundedCornerShape(12.dp),
             )
-            .clickable(onClick = onClick)
+            .tvClickable(radius = 12.dp, onClick = onClick)
             .padding(
                 horizontal = if (compact) 4.dp else 8.dp,
                 vertical = if (compact) 10.dp else 16.dp,

@@ -1,5 +1,6 @@
 package com.me.ubox.ui.browse
 
+import com.me.ubox.ui.components.tvFocusFrame
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -116,15 +117,19 @@ fun BrowseScreen(
                     { Text(site?.displayName ?: "浏览") }
                 },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        if (searchMode) vm.exitSearch() else onBack()
-                    }) {
+                    IconButton(
+                        onClick = { if (searchMode) vm.exitSearch() else onBack() },
+                        modifier = Modifier.tvFocusFrame(radius = 20.dp),
+                    ) {
                         Icon(Icons.Filled.ArrowBackIosNew, contentDescription = "返回")
                     }
                 },
                 actions = {
                     // 对照 Flutter: 点击搜索图标仅进入输入模式, 回车才提交搜索.
-                    IconButton(onClick = { vm.enterSearch() }) {
+                    IconButton(
+                        onClick = { vm.enterSearch() },
+                        modifier = Modifier.tvFocusFrame(radius = 20.dp),
+                    ) {
                         Icon(Icons.Filled.Search, contentDescription = "搜索")
                     }
                 },
@@ -248,6 +253,7 @@ private fun ClassChip(name: String, selected: Boolean, onClick: () -> Unit) {
             selected = selected,
             onClick = onClick,
             label = { Text(text = name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            modifier = Modifier.tvFocusFrame(radius = 8.dp),
         )
     }
 }
