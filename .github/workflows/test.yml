@@ -54,4 +54,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: test
-          files: out/debug.apk
+          files: out/*.apk
