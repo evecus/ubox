@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -806,14 +807,23 @@ private fun Modifier.clickableSetting(onClick: () -> Unit): Modifier {
     val tv by TvMode.isRemote.collectAsStateWithLifecycle()
     val guarded = this.pageFocusGuard()
     if (!tv) return guarded.clickable(onClick = onClick)
-    // TV: 遥控器焦点显示白色描边 (默认 clickable 的焦点指示在深色背景下几乎看不见).
+    // TV: 遥控器焦点显示 blbl 双描边 (外 3dp 半透明黑 + 内 2dp 白, 圆角 10dp) + 半透明深灰底.
     val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val focused by source.collectIsFocusedAsState()
     // 修饰链结构必须恒定: 原先焦点时在 clickable 之前插入 border, 修饰链结构变化会让
     // clickable (focusable) 节点被重建 -> 焦点丢失 -> 描边消失, 表现为"没有焦点".
-    // 现在 clickable 在前、border 恒在后, 仅切换颜色.
+    // 现在 clickable 在前、background/border 恒在后, 仅切换颜色.
     return guarded
         .clickable(interactionSource = source, indication = null, onClick = onClick)
+        .background(
+            if (focused) androidx.compose.ui.graphics.Color(0x4D333333) else androidx.compose.ui.graphics.Color.Transparent,
+            androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+        )
+        .border(
+            3.dp,
+            if (focused) androidx.compose.ui.graphics.Color(0x66000000) else androidx.compose.ui.graphics.Color.Transparent,
+            androidx.compose.foundation.shape.RoundedCornerShape(9.dp),
+        )
         .border(
             2.dp,
             if (focused) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color.Transparent,

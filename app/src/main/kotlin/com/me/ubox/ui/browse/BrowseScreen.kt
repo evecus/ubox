@@ -56,6 +56,7 @@ import com.me.ubox.TvMode
 import com.me.ubox.data.JsonUtil
 import com.me.ubox.ui.components.LoadingBox
 import com.me.ubox.ui.components.NetworkImage
+import com.me.ubox.ui.components.TvDialogButton
 import com.me.ubox.ui.components.TvFocusable
 import com.me.ubox.ui.components.VodPoster
 import kotlinx.coroutines.launch
@@ -228,15 +229,13 @@ fun BrowseScreen(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = {
+                TvDialogButton(label = "更多 (下一页)", onClick = {
                     if (!loading) {
                         vm.nextPage()
                         // 翻页后回到顶部 (对照 Flutter _nextPage: _controller.animateTo(0, 300ms, easeOut)).
                         scope.launch { gridState.animateScrollToItem(0) }
                     }
-                }) {
-                    Text("更多 (下一页)")
-                }
+                })
             }
         }
     }
