@@ -46,7 +46,6 @@ import com.me.ubox.danmaku.DanmuSearchResult
 import com.me.ubox.danmaku.DanmuSettings
 import com.me.ubox.ui.AppSnackbar
 import com.me.ubox.ui.components.TvButton
-import com.me.ubox.ui.components.TvDialogButton
 import com.me.ubox.ui.components.TvFocusable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
@@ -554,20 +553,24 @@ fun ConfigImportDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(8.dp))
-                TvDialogButton(label = "从剪贴板粘贴", onClick = {
-                    val t = clipboard.getText()?.text?.trim() ?: ""
-                    if (t.isNotEmpty()) text = t
-                })
+                TextButton(
+                    onClick = {
+                        val t = clipboard.getText()?.text?.trim() ?: ""
+                        if (t.isNotEmpty()) text = t
+                    },
+                ) {
+                    Text("从剪贴板粘贴")
+                }
             }
         },
         confirmButton = {
-            TvDialogButton(label = "导入", onClick = {
+            TextButton(onClick = {
                 onDismiss()
                 onImport(text.trim())
-            })
+            }) { Text("导入") }
         },
         dismissButton = {
-            TvDialogButton(label = "取消", onClick = onDismiss)
+            TextButton(onClick = onDismiss) { Text("取消") }
         },
     )
 }

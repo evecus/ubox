@@ -21,11 +21,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.width
@@ -177,10 +172,9 @@ private tailrec fun android.content.Context.findActivity(): android.app.Activity
     }
 
 /**
- * 遥控器可聚焦控件 (焦点视觉完全对照 blbl: blbl_focus_list_selector_round + blbl_focus_scale):
- *   焦点态 = 半透明深灰底 (#4D333333) + 外圈 3dp 黑描边 (#66000000) + 内圈 2dp 白描边 + 1.04 放大 (120ms);
- *   外黑内白双描边保证焦点框在亮/暗背景上都清晰可见; 圆角沿用组件自身 [radius].
- * OK/确定键 (enter/select/space/dpadCenter/gameButtonA) 与触摸点击等价.
+ * 遥控器可聚焦控件 (TV 焦点效果对照 Flutter 版 TvFocusable / dart_simple_live HighlightWidget):
+ *   焦点态 = 白色 2dp 描边 + 4% 放大 (160ms) + 白色光晕阴影;
+ *   OK/确定键 (enter/select/space/dpadCenter/gameButtonA) 与触摸点击等价.
  * 手机模式下退化为普通 clickable (无焦点装饰).
  */
 @Composable
@@ -191,8 +185,8 @@ fun TvFocusable(
     autofocus: Boolean = false,
     radius: Dp = 8.dp,
     focusScale: Float = 1.04f,
-    @Suppress("unused") borderColor: Color = Color.White,
-    @Suppress("unused") showBorder: Boolean = true,
+    borderColor: Color = Color.White,
+    showBorder: Boolean = true,
     onLongPress: (() -> Unit)? = null,
     onFocusChanged: (Boolean) -> Unit = {},
     content: @Composable () -> Unit,
@@ -243,7 +237,7 @@ fun TvFocusable(
     LaunchedEffect(focused) { onFocusChanged(focused) }
     val scale by animateFloatAsState(
         targetValue = if (focused) focusScale else 1f,
-        animationSpec = tween(durationMillis = 120),
+        animationSpec = tween(durationMillis = 160),
         label = "tv-focus-scale",
     )
     Box(
@@ -269,43 +263,25 @@ fun TvFocusable(
                 if (focused) {
                     Modifier
                         .scale(scale)
-                        // blbl 焦点绘制 (见 kdoc): 填充底画在内容下, 双描边画在内容上.
-                        .drawWithContent {
-                            val inset = 1.dp.toPx()
-                            // 填充底 (blbl_focus_fill): 透明背景条目呈现深灰底;
-                            // 海报等自带不透明背景的条目被其内容覆盖, 只见描边.
-                            drawRoundRect(
-                                color = FocusFillColor,
-                                topLeft = Offset(inset, inset),
-                                size = Size(size.width - inset * 2, size.height - inset * 2),
-                                cornerRadius = CornerRadius((radius - 1.dp).toPx()),
-                            )
-                            drawContent()
-                            // 外圈阴影描边 (blbl_focus_shadow): 亮背景上压暗一圈提对比.
-                            drawRoundRect(
-                                color = FocusShadowColor,
-                                cornerRadius = CornerRadius(radius.toPx()),
-                                style = Stroke(3.dp.toPx()),
-                            )
-                            // 内圈白描边 (blbl_focus_white)
-                            drawRoundRect(
-                                color = Color.White,
-                                topLeft = Offset(inset, inset),
-                                size = Size(size.width - inset * 2, size.height - inset * 2),
-                                cornerRadius = CornerRadius((radius - 1.dp).toPx()),
-                                style = Stroke(2.dp.toPx()),
-                            )
-                        }
+                        .shadow(
+                            elevation = 8.dp,
+                            shape = RoundedCornerShape(radius),
+                            ambientColor = Color.White,
+                            spotColor = Color.White,
+                        )
+                        .then(
+                            if (showBorder) {
+                                Modifier.border(2.dp, borderColor, RoundedCornerShape(radius))
+                            } else {
+                                Modifier
+                            }
+                        )
                 } else {
                     Modifier
                 }
             )
     ) { content() }
 }
-
-/** blbl 焦点样式色值 (colors.xml: blbl_focus_fill / blbl_focus_shadow). */
-private val FocusFillColor = Color(0x4D333333)
-private val FocusShadowColor = Color(0x66000000)
 
 /** 遥控器 OK/确定键集合 (对照 Flutter: enter/select/space/gameButtonA). */
 fun isTvSelectKey(key: Key): Boolean {
@@ -364,8 +340,7 @@ fun Modifier.tvConfirmKeyboard(state: TvInputState): Modifier {
 
 /**
  * 遥控器按钮: 图标 + 文字 (对照 Flutter 版 TvButton):
- * 焦点态 = 深灰底白字加粗 (描边/缩放由 TvFocusable 的 blbl 样式提供);
- * 选中态 (未聚焦) = 白底黑字.
+ * 焦点/选中态 = 白底黑字, 平时 = 深灰底白字.
  */
 @Composable
 fun TvButton(
@@ -389,14 +364,15 @@ fun TvButton(
         showBorder = false,
         onFocusChanged = { focusedState = it },
     ) {
-        // 焦点优先显示焦点样式; selected 且未聚焦时才用白底表示"当前选中".
-        val selectedOnly = selected && !focusedState
+        val active = focusedState || selected
+        // 默认宽度包裹内容: 原先 fillMaxSize 会在 Row 里吃掉全部剩余宽度,
+        // 导致同排后面的按钮 (搜索/历史等) 被挤出屏幕. 需要撑满时传 fillWidth = true.
         Box(
             modifier = Modifier
                 .then(if (fillWidth) Modifier.fillMaxWidth() else Modifier)
                 .fillMaxHeight()
                 .background(
-                    color = if (selectedOnly) Color.White else Color(0x6C3D3D3D),
+                    color = if (active) Color.White else Color(0x6C3D3D3D),
                     shape = RoundedCornerShape(8.dp),
                 )
                 .padding(horizontal = 14.dp),
@@ -411,7 +387,7 @@ fun TvButton(
                         imageVector = icon,
                         contentDescription = null,
                         modifier = Modifier.size((fontSize + 6).dp),
-                        tint = if (selectedOnly) Color.Black else Color.White.copy(alpha = if (focusedState) 1f else 0.7f),
+                        tint = if (active) Color.Black else Color.White.copy(alpha = 0.7f),
                     )
                     Spacer(Modifier.width(6.dp))
                 }
@@ -419,28 +395,12 @@ fun TvButton(
                     text = label,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    fontWeight = if (focusedState || selected) FontWeight.Bold else FontWeight.W500,
-                    color = if (selectedOnly) Color.Black else Color.White,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.W500,
+                    color = if (active) Color.Black else Color.White,
                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = fontSize.sp),
                 )
             }
         }
-    }
-}
-
-/**
- * 弹窗动作按钮 (AlertDialog 的 confirmButton/dismissButton/标题栏"关闭"等):
- *   TV = TvButton (blbl 焦点样式: 双描边 + 放大, 遥控器焦点清晰可见);
- *   手机 = Material TextButton (原样式).
- * 遥控器上 AlertDialog 里的 TextButton 只有一圈几乎不可见的 ripple, 故统一走本组件.
- */
-@Composable
-fun TvDialogButton(label: String, onClick: () -> Unit) {
-    val tv by TvMode.isTV.collectAsStateWithLifecycle()
-    if (tv) {
-        TvButton(label = label, height = 40.dp, fontSize = 15, onTap = onClick)
-    } else {
-        androidx.compose.material3.TextButton(onClick = onClick) { Text(label) }
     }
 }
 
@@ -658,17 +618,16 @@ fun LiveListItem(
     autofocus: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
-    // 焦点 = blbl 样式 (TvFocusable 双描边) + 深灰底白字;
-    // 选中 = #331890FF 底 + #1890FF 1dp 描边 (#1890FF 字);
+    // 焦点 = #1890FF 实底 (黑字); 选中 = #331890FF 底 + #1890FF 1dp 描边 (#1890FF 字);
     // 常规 = 透明底. 原版常规是黑字 (直播页浅色底), 本工程暗色主题故用白字.
     val bg = when {
-        focused -> Color(0x4D333333)
+        focused -> LiveColors.Blue
         selected -> LiveColors.SelectedBg
         else -> Color.Transparent
     }
-    val borderColor = if (selected && !focused) LiveColors.Blue else Color.Transparent
+    val borderColor = if (focused || !selected) Color.Transparent else LiveColors.Blue
     val textColor = when {
-        focused -> Color.White
+        focused -> Color.Black
         selected -> LiveColors.Blue
         else -> Color.White
     }
@@ -677,6 +636,8 @@ fun LiveListItem(
         modifier = modifier,
         autofocus = autofocus,
         radius = 6.dp,
+        focusScale = 1.0f, // 原版焦点无缩放
+        showBorder = false, // 自绘焦点底色
         onFocusChanged = { focused = it },
     ) {
         Box(

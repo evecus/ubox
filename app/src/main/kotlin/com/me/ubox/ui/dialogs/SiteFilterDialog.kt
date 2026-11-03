@@ -39,7 +39,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.me.ubox.TvMode
 import com.me.ubox.data.Site
 import com.me.ubox.data.SiteFilter
-import com.me.ubox.ui.components.TvDialogButton
 import com.me.ubox.ui.components.TvFocusable
 
 /**
@@ -186,6 +185,6 @@ fun SiteBlacklistSheet(
         onDismissRequest = onDismiss,
         title = { Text("站源黑名单") },
         text = { Body(Modifier.fillMaxWidth()) },
-        confirmButton = { TvDialogButton(label = "完成", onClick = onDismiss) },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
     )
 }

@@ -95,7 +95,6 @@ import com.me.ubox.ui.AppSnackbar
 import com.me.ubox.ui.components.ImmersiveSystemBarsEffect
 import com.me.ubox.ui.components.NetworkImage
 import com.me.ubox.ui.components.TvButton
-import com.me.ubox.ui.components.TvDialogButton
 import com.me.ubox.ui.components.TvFocusable
 import com.me.ubox.ui.components.VideoSurfaceView
 import com.me.ubox.ui.components.pageFocusGuard
@@ -613,7 +612,7 @@ private fun SmallLayout(
                     Text(detailError, color = Color.White)
                     Spacer(Modifier.height(8.dp))
                     // 返回走遥控器返回键, 不在这里放"返回"按钮.
-                    TvDialogButton(label = "重试", onClick = onReload)
+                    TextButton(onClick = onReload) { Text("重试") }
                 }
             }
             else -> {
@@ -641,7 +640,7 @@ private fun SmallLayout(
             onDismissRequest = { showDesc = false },
             title = { Text("简介", color = Color.White, fontWeight = FontWeight.Bold) },
             text = { Text(des.ifEmpty { "暂无简介" }, color = Color.White, fontSize = 15.sp) },
-            confirmButton = { TvDialogButton(label = "关闭", onClick = { showDesc = false }) },
+            confirmButton = { TextButton(onClick = { showDesc = false }) { Text("关闭") } },
         )
     }
 }
@@ -1060,10 +1059,10 @@ private fun FullscreenPlayer(
                     // 退出走遥控器返回键, 不在这里放"返回"按钮.
                     Row {
                         if (error.isNotEmpty()) {
-                            TvDialogButton(label = "重试", onClick = vm::retry)
+                            TextButton(onClick = vm::retry) { Text("重试") }
                         }
                         if (hasNext) {
-                            TvDialogButton(label = "下一集", onClick = vm::playNext)
+                            TextButton(onClick = vm::playNext) { Text("下一集") }
                         }
                     }
                 }
@@ -1098,7 +1097,7 @@ private fun EpisodePickerDialog(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("选集", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                TvDialogButton(label = "关闭", onClick = onDismiss)
+                TextButton(onClick = onDismiss) { Text("关闭") }
             }
         },
         text = {
@@ -1163,7 +1162,7 @@ private fun EpisodePickerDialog(
             }
         },
         confirmButton = {
-            TvDialogButton(label = "取消", onClick = onDismiss)
+            TextButton(onClick = onDismiss) { Text("取消") }
         },
     )
 }

@@ -34,7 +34,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -88,8 +87,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.me.ubox.TvMode
 import com.me.ubox.danmaku.DanmakuManager
 import com.me.ubox.danmaku.DanmuSettings
-import com.me.ubox.ui.components.TvDialogButton
-import com.me.ubox.ui.components.TvFocusable
 import com.me.ubox.ui.components.formatDuration
 import master.flame.danmaku.ui.widget.DanmakuView
 import kotlinx.coroutines.delay
@@ -670,16 +667,11 @@ fun EpisodeSelectDialog(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("选集", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                TvDialogButton(label = "关闭", onClick = onDismiss)
+                TextButton(onClick = onDismiss) { Text("关闭") }
             }
         },
         text = {
-            // 先滚到当前集附近, 再让当前集 autofocus (懒网格里未组合的项无法获得焦点).
-            val pickState = rememberLazyGridState(
-                initialFirstVisibleItemIndex = maxOf(0, currentIdx - columns),
-            )
             LazyVerticalGrid(
-                state = pickState,
                 columns = GridCells.Fixed(columns),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -689,36 +681,30 @@ fun EpisodeSelectDialog(
             ) {
                 items(count) { i ->
                     val selected = i == currentIdx
-                    TvFocusable(
-                        onTap = { onSelect(i) },
-                        modifier = Modifier.height(48.dp),
-                        autofocus = selected,
-                        radius = 8.dp,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(
-                                    if (selected) AccentBlue else Color.White.copy(alpha = 0.12f)
-                                )
-                                .padding(horizontal = 4.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = epLabel(epNames, i),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                fontSize = if (selected) 15.sp else 14.sp,
-                                color = Color.White,
+                    Box(
+                        modifier = Modifier
+                            .height(48.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (selected) AccentBlue else Color.White.copy(alpha = 0.12f)
                             )
-                        }
+                            .clickable { onSelect(i) }
+                            .padding(horizontal = 4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = epLabel(epNames, i),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = if (selected) 15.sp else 14.sp,
+                            color = Color.White,
+                        )
                     }
                 }
             }
         },
         confirmButton = {
-            TvDialogButton(label = "取消", onClick = onDismiss)
+            TextButton(onClick = onDismiss) { Text("取消") }
         },
     )
 }
@@ -799,12 +785,12 @@ internal fun StatusView(
             }
             Spacer(Modifier.height(8.dp))
             Row {
-                TvDialogButton(label = "返回", onClick = onBack)
+                TextButton(onClick = onBack) { Text("返回") }
                 if (error.isNotEmpty()) {
-                    TvDialogButton(label = "重试", onClick = onRetry)
+                    TextButton(onClick = onRetry) { Text("重试") }
                 }
                 if (hasNext) {
-                    TvDialogButton(label = "下一集", onClick = onNext)
+                    TextButton(onClick = onNext) { Text("下一集") }
                 }
             }
         }

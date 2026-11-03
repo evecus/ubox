@@ -629,18 +629,13 @@ private fun TvLeftPanel(
                 onTap = onPickSearchSite,
             )
             Spacer(Modifier.height(10.dp))
-            // 输入框: 焦点态 blbl 双描边 (外 3dp 半透明黑 + 内 2dp 白), 只读 (输入全靠下方键盘)
+            // 输入框: 焦点态白色描边, 只读 (输入全靠下方键盘)
             Box(
                 modifier = Modifier
                     .height(56.dp)
                     .fillMaxWidth()
                     .border(
-                        width = 3.dp,
-                        color = if (inputFocused) Color(0x66000000) else Color.Transparent,
-                        shape = RoundedCornerShape(9.dp),
-                    )
-                    .border(
-                        width = 2.dp,
+                        width = if (inputFocused) 2.dp else 1.dp,
                         color = if (inputFocused) Color.White else Color.Gray.copy(alpha = 0.7f),
                         shape = RoundedCornerShape(8.dp),
                     )

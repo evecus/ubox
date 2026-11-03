@@ -38,7 +38,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.me.ubox.TvMode
-import com.me.ubox.ui.components.TvDialogButton
 import com.me.ubox.ui.components.TvFocusable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
@@ -168,7 +167,7 @@ fun <T> SinglePickSheet(
             }
         },
         confirmButton = {
-            TvDialogButton(label = "取消", onClick = onDismiss)
+            TextButton(onClick = onDismiss) { Text("取消") }
         },
     )
 }
@@ -202,11 +201,11 @@ fun InfoDialog(
             }
         },
         confirmButton = {
-            TvDialogButton(label = "关闭", onClick = onDismiss)
+            TextButton(onClick = onDismiss) { Text("关闭") }
         },
         dismissButton = if (onCopy != null && text.isNotEmpty()) {
             {
-                TvDialogButton(label = "复制", onClick = onCopy)
+                TextButton(onClick = onCopy) { Text("复制") }
             }
         } else {
             null
