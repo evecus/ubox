@@ -78,6 +78,7 @@ import com.me.ubox.ui.AppSnackbar
 import com.me.ubox.ui.components.Badge
 import com.me.ubox.ui.components.ImmersiveSystemBarsEffect
 import com.me.ubox.ui.components.LiveListItem
+import com.me.ubox.ui.components.TvDialogButton
 import com.me.ubox.ui.components.VideoSurfaceView
 import com.me.ubox.ui.components.pageFocusGuard
 import com.me.ubox.ui.player.PlayerOptions
@@ -227,14 +228,14 @@ fun LiveScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
+                TvDialogButton(label = "确定", onClick = {
                     val ok = vm.confirmPassword(passwordGroup, pwd)
                     showPasswordDialog = null
                     if (!ok) AppSnackbar.show("密码错误")
-                }) { Text("确定") }
+                })
             },
             dismissButton = {
-                TextButton(onClick = { showPasswordDialog = null }) { Text("取消") }
+                TvDialogButton(label = "取消", onClick = { showPasswordDialog = null })
             },
         )
     }
