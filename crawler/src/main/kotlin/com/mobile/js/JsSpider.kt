@@ -2,35 +2,52 @@ package com.mobile.js
 
 import android.content.Context
 import android.util.Base64
+import com.dokar.quickjs.QuickJs
+import com.dokar.quickjs.binding.function
 import com.github.catvod.crawler.Spider
-import com.whl.quickjs.wrapper.Function
-import com.whl.quickjs.wrapper.JSArray
-import com.whl.quickjs.wrapper.JSCallFunction
-import com.whl.quickjs.wrapper.JSObject
-import com.whl.quickjs.wrapper.JSUtils
-import com.whl.quickjs.wrapper.QuickJSContext
-import com.whl.quickjs.wrapper.UriUtil
-import com.whl.quickjs.wrapper.ModuleLoader
-import org.json.JSONArray
-import org.json.JSONException
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.InputStream
-import java.lang.reflect.Method
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
+/**
+ * JS 爬虫 (drpy) — 基于 dokar3/quickjs-kt 的移植版.
+ *
+ * 与原 com.whl.quickjs wrapper 版的关键差异:
+ *   1. 运行时: QuickJs.create(jobDispatcher), so 由依赖自带 (四架构), 不再手动 QuickJSLoader.init.
+ *   2. 模块加载: alpha13 无动态 module loader, evaluate 前必须把 import 的模块
+ *      预先 addModule 注册 (registerModuleTree 递归扫描 import, 对齐 QuickJS
+ *      native 只解析 "./"/"../" 相对名的规则); cheerio/crypto-js 仍做字节码缓存,
+ *      缓存 key 按模块规范化名 Md5 (compile 的 filename 必须与 import 名一致).
+ *   3. 调用: JS 函数值不能跨 JNI, spider 方法统一经
+ *      Promise.resolve(globalThis.key.func(...__args())).then(__result/__error)
+ *      桥接; evaluate 会等 promise 队列跑完再返回 (awaitAsyncJobs).
+ *   4. 线程模型: evaluate 在 Spider 框架调用的同步线程上跑 JS (runBlocking),
+ *      asyncFunction 绑定 (_httpAsync/__timer) 在独立的 jobExecutor 上跑协程,
+ *      两个线程必须分开, 否则互相等待死锁.
+ *   5. dex/jsapi 绑定已移除: 该路径的 jar 类以 QuickJSContext 为构造参数,
+ *      引擎替换后无法实例化, 属于已知的 jar 兼容性破坏点.
+ */
 class JsSpider(rawKey: String, val api: String, val dex: Class<*>?) : Spider() {
 
     private val key: String = "J" + Md5.encode(rawKey)
+    // JS 执行线程: 序列化所有 evaluate 调用 (QuickJS 运行时非并发安全).
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
-    private var ctx: QuickJSContext? = null
-    private var jsObject: JSObject? = null
+    // 协程 job dispatcher: asyncFunction 绑定在这条线程上执行.
+    private val jobExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    private var rt: QuickJs? = null
     private var cat = false
-    private var emptyModuleBytecode: ByteArray? = null
     private val destroyed = AtomicBoolean(false)
+    // 调用参数/结果槽: __args/__result 绑定跨线程读写, 用原子引用.
+    // 参数用 List (quickjs-kt 只对 List 做数组映射, Kotlin Array 不保证).
+    private val argsSlot = AtomicReference<List<Any?>>(emptyList())
+    private val resultSlot = AtomicReference<Any?>(null)
 
     init {
         try {
@@ -48,32 +65,45 @@ class JsSpider(rawKey: String, val api: String, val dex: Class<*>?) : Spider() {
         return executor.submit(callable)
     }
 
+    /** 在 JS 执行线程上同步调用 spider 方法, 结果经 __result 槽取回. */
+    private fun callInline(runtime: QuickJs, func: String, vararg args: Any?): Any? {
+        return runBlocking {
+            argsSlot.set(args.toList())
+            resultSlot.set(null)
+            runtime.evaluate<Any?>(
+                "Promise.resolve(globalThis.$key.$func(...__args()))" +
+                        ".then(r => __result(r), e => __error(e)); void 0;",
+                filename = "spider_call.js"
+            )
+            resultSlot.get()
+        }
+    }
+
+    /** 框架线程入口: 提交到 JS 执行线程执行 (不可在 JS 执行线程上调用, 会自等死锁). */
     private fun call(func: String, vararg args: Any?): Any? {
-        if (destroyed.get() || jsObject == null) return null
-        val obj = jsObject ?: return null
+        if (destroyed.get()) return null
+        val runtime = rt ?: return null
         return try {
-            submit(Callable { Async.run(obj, func, args).get() }).get()
+            submit(Callable { callInline(runtime, func, *args) }).get()
         } catch (e: Throwable) {
             Loge.i("echo-call-error " + e.message)
             null
         }
     }
 
-    private fun cfg(ext: String?): JSObject {
-        val context = ctx!!
-        val cfgObj = context.createJSObject()
-        cfgObj.set("stype", 3)
-        cfgObj.set("skey", key)
-        if (Json.invalid(ext)) cfgObj.set("ext", ext)
-        else cfgObj.set("ext", context.parse(ext) as JSObject)
-        return cfgObj
+    private fun cfg(ext: String?): Map<String, Any?> {
+        val map = LinkedHashMap<String, Any?>()
+        map["stype"] = 3
+        map["skey"] = key
+        map["ext"] = if (Json.invalid(ext)) ext else JsJson.parse(ext)
+        return map
     }
 
     override fun init(context: Context?, extend: String?) {
         mContext = context
         try {
-            if (cat) call("init", submit(Callable { cfg(extend) }).get())
-            else call("init", if (Json.valid(extend)) ctx?.parse(extend) else extend)
+            if (cat) call("init", cfg(extend))
+            else call("init", if (Json.valid(extend)) JsJson.parse(extend) else extend)
         } catch (ignored: Exception) {
         }
     }
@@ -94,11 +124,9 @@ class JsSpider(rawKey: String, val api: String, val dex: Class<*>?) : Spider() {
         }
     }
 
-    @Suppress("UNCHECKED_CAST")
     override fun categoryContent(tid: String?, pg: String?, filter: Boolean, extend: HashMap<String, String>?): String {
         return try {
-            val obj = submit(Callable { JSUtils<String>().toObj(ctx, extend as Map<String, String>?) }).get()
-            (call("category", tid, pg, filter, obj) as? String) ?: ""
+            (call("category", tid, pg, filter, extend ?: emptyMap()) as? String) ?: ""
         } catch (e: Exception) {
             ""
         }
@@ -122,8 +150,7 @@ class JsSpider(rawKey: String, val api: String, val dex: Class<*>?) : Spider() {
 
     override fun playerContent(flag: String?, id: String?, vipFlags: List<String>?): String {
         return try {
-            val array = submit(Callable { JSUtils<String>().toArray(ctx, vipFlags) }).get()
-            (call("play", flag, id, array) as? String) ?: ""
+            (call("play", flag, id, vipFlags ?: emptyList()) as? String) ?: ""
         } catch (e: Exception) {
             ""
         }
@@ -175,154 +202,224 @@ class JsSpider(rawKey: String, val api: String, val dex: Class<*>?) : Spider() {
         try {
             executor.submit {
                 try {
-                    jsObject = null
-                    ctx?.destroy()
-                    ctx = null
+                    rt?.close()
+                    rt = null
                 } catch (th: Throwable) {
                     Loge.i("echo-js-destroy-error " + th.message)
                 } finally {
+                    jobExecutor.shutdown()
                     executor.shutdown()
                 }
             }
         } catch (th: Throwable) {
             executor.shutdownNow()
+            jobExecutor.shutdownNow()
         }
     }
+
+    // ---------------------------------------------------------------- 初始化
 
     private fun initializeJS() {
         try {
             submit(Callable {
                 try {
-                    if (ctx == null) createCtx()
-                    if (dex != null) createDex()
-                    var content: String? = JSRuntime.loadModule(api)
-                    if (isInvalidModuleContent(content)) return@Callable null
-                    val context = ctx!!
-                    if (content!!.startsWith("//bb")) {
-                        cat = true
-                        val b = Base64.decode(content.replace("//bb", ""), Base64.DEFAULT)
-                        context.execute(byteFF(b), key + ".js")
-                        context.evaluateModule(String.format(SPIDER_STRING_CODE, key + ".js") + "globalThis." + key + " = globalThis.__JS_SPIDER__;", "tv_box_root.js")
-                    } else {
-                        if (content.contains("__JS_SPIDER__")) {
-                            content = content.replace("__JS_SPIDER__\\s*=".toRegex(), "export default ")
-                        }
-                        if (content.contains("__jsEvalReturn") && !content.contains("export default")) {
-                            cat = true
-                        }
-                        context.evaluateModule(content, api)
-                        context.evaluateModule(String.format(SPIDER_STRING_CODE, api) + "globalThis." + key + " = globalThis.__JS_SPIDER__;", "tv_box_root.js")
-                    }
-                    jsObject = context.get(context.getGlobalObject(), key) as? JSObject
-                    jsObject?.hold()
-                    null
+                    initializeRuntime()
                 } catch (th: Throwable) {
                     Loge.e("echo-initializeJS-error " + th.message)
-                    null
                 }
+                null
             }).get()
         } catch (th: Throwable) {
             Loge.e("echo-initializeJS-wait " + th.message)
         }
     }
 
-    fun byteFF(bytes: ByteArray): ByteArray {
-        val newBt = ByteArray(bytes.size - 4)
-        newBt[0] = 1
-        System.arraycopy(bytes, 5, newBt, 1, bytes.size - 5)
-        return newBt
+    private suspend fun initializeRuntime() {
+        val runtime = QuickJs.create(jobExecutor.asCoroutineDispatcher())
+        rt = runtime
+        try {
+            registerBindings(runtime)
+            evalGlobalScripts(runtime)
+            preloadTemplate(runtime)
+            loadSpider(runtime)
+        } catch (th: Throwable) {
+            Loge.e("echo-initializeJS-setup " + th.message)
+        }
     }
 
-    private fun createCtx() {
-        val context = QuickJSContext.create()
-        ctx = context
-        try {
-            emptyModuleBytecode = context.compileModule(EMPTY_MODULE_CODE, "empty.js")
-        } catch (th: Throwable) {
-            emptyModuleBytecode = ByteArray(0)
+    private fun registerBindings(runtime: QuickJs) {
+        Global.register(runtime)
+        runtime.function("__args") { argsSlot.get() }
+        runtime.function("__result") { args -> resultSlot.set(args.getOrNull(0)) }
+        runtime.function("__error") { args ->
+            Loge.i("echo-js-call-error " + JsJson.stringify(args.getOrNull(0)))
         }
-        try {
-            context.setModuleLoader(object : ModuleLoader() {
-                override fun isBytecodeMode(): Boolean {
-                    return true
-                }
+    }
 
-                override fun getModuleBytecode(moduleName: String): ByteArray {
-                    val cacheName = if (moduleName.contains("cheerio.min.js")) "cheerio.min"
-                        else if (moduleName.contains("crypto-js.js")) "crypto-js" else null
-                    if (cacheName != null && cacheName.isNotEmpty()) {
-                        try {
-                            val cached = JSRuntime.getCacheByte(cacheName)
-                            if (cached.isNotEmpty()) return cached
-                        } catch (ignored: Throwable) {
-                        }
-                    }
-                    val ss = JSRuntime.loadModule(moduleName)
-                    if (isInvalidModuleContent(ss)) {
-                        return compileEmptyModule(moduleName)
-                    }
-                    return if (ss!!.startsWith("//DRPY")) {
-                        Base64.decode(ss.replace("//DRPY", ""), Base64.URL_SAFE)
-                    } else if (ss.startsWith("//bb")) {
-                        val b = Base64.decode(ss.replace("//bb", ""), Base64.DEFAULT)
-                        byteFF(b)
-                    } else {
-                        compileModule(moduleName, ss)
-                    }
-                }
-
-                override fun getModuleStringCode(moduleName: String): String {
-                    return JSRuntime.loadModule(moduleName) ?: ""
-                }
-
-                override fun moduleNormalizeName(moduleBaseName: String, moduleName: String): String {
-                    return UriUtil.resolve(moduleBaseName, moduleName)
-                }
-            })
-        } catch (th: Throwable) {
-            Loge.e("echo-setModuleLoader-error " + th.message)
-        }
-        try {
-            context.setConsole(object : QuickJSContext.Console {
-                override fun log(info: String) {
-                    Loge.i("QuJs$info")
-                }
-            })
-        } catch (th: Throwable) {
-            Loge.e("echo-setConsole-error " + th.message)
-        }
-        val globalObject = context.getGlobalObject()
-        globalObject.bind(Global(executor))
-        val localObj = context.createJSObject()
-        globalObject.set("local", localObj)
-        localObj.bind(local())
+    /** 定时器垫片 + net.js: JS 函数值无法跨 JNI, 定时器用 promise 链在事件循环里调度. */
+    private suspend fun evalGlobalScripts(runtime: QuickJs) {
+        runtime.evaluate<Any?>(
+            "globalThis.setTimeout = (fn, ms) => __timer(ms || 0).then(() => { try { if (fn) fn() } catch (e) { console.error(e) } });\n" +
+                    "globalThis.setInterval = globalThis.setTimeout;\n" +
+                    "globalThis.clearTimeout = () => undefined;\n" +
+                    "globalThis.clearInterval = () => undefined;\n" +
+                    "void 0;"
+        )
         val net = JSRuntime.getAsOpen("js/lib/net.js")
-        if (net.isNotEmpty()) globalObject.getContext().evaluate(net)
-        preloadTemplate()
+        if (net.isNotEmpty()) runtime.evaluate<Any?>(net, filename = "net.js")
     }
 
-    private fun compileEmptyModule(moduleName: String?): ByteArray {
-        Loge.i("echo-getModuleBytecode empty: $moduleName")
-        return emptyModuleBytecode ?: ByteArray(0)
-    }
-
-    private fun compileModule(moduleName: String, content: String): ByteArray {
+    private suspend fun preloadTemplate(runtime: QuickJs) {
         try {
-            val context = ctx!!
-            if (moduleName.contains("cheerio.min.js")) {
-                val bytecode = context.compileModule(content, "cheerio.min.js")
-                JSRuntime.setCacheByte("cheerio.min", bytecode)
-                return bytecode
-            } else if (moduleName.contains("crypto-js.js")) {
-                val bytecode = context.compileModule(content, "crypto-js.js")
-                JSRuntime.setCacheByte("crypto-js", bytecode)
-                return bytecode
+            val tpl = JSRuntime.loadModule("模板.js")
+            if (tpl != null && !isInvalidModuleContent(tpl)) {
+                registerModuleTree(runtime, "模板.js", tpl, HashSet())
             }
-            return context.compileModule(content, moduleName)
+            runtime.evaluate<Any?>(
+                "import tpl from '模板.js';\n" +
+                        "globalThis.muban = tpl.muban;\n" +
+                        "globalThis.getMubans = tpl.getMubans;",
+                filename = "tv_box_template.js",
+                asModule = true
+            )
         } catch (th: Throwable) {
-            Loge.i("echo-compileModule-error " + moduleName + ", msg=" + th.message)
-            return compileEmptyModule(moduleName)
+            Loge.i("echo-preloadTemplate-error " + th.message)
         }
+    }
+
+    private suspend fun loadSpider(runtime: QuickJs) {
+        val loaded = JSRuntime.loadModule(api)
+        if (loaded == null || isInvalidModuleContent(loaded)) {
+            Loge.i("echo-loadSpider-invalid " + api)
+            return
+        }
+        val content = loaded
+        if (content.startsWith("//bb")) {
+            cat = true
+            // 打包字节码: 无法扫描 import, 模块名以打包时 filename 为准, 逐个候选名试.
+            val bytecode = byteFF(Base64.decode(content.replace("//bb", ""), Base64.DEFAULT))
+            runtime.addModule(bytecode)
+            evalSpiderBridge(runtime, listOf(key + ".js", api))
+        } else {
+            var src = content
+            if (src.contains("__JS_SPIDER__")) {
+                src = src.replace("__JS_SPIDER__\\s*=".toRegex(), "export default ")
+            }
+            if (src.contains("__jsEvalReturn") && !src.contains("export default")) {
+                cat = true
+            }
+            registerModuleTree(runtime, api, src, HashSet())
+            evalSpiderBridge(runtime, listOf(api))
+        }
+    }
+
+    /** SPIDER_STRING_CODE 导入 spider 模块并把实例挂到 globalThis.key. */
+    private suspend fun evalSpiderBridge(runtime: QuickJs, candidates: List<String>) {
+        var lastError: Throwable? = null
+        for (cand in candidates) {
+            try {
+                runtime.evaluate<Any?>(
+                    String.format(SPIDER_STRING_CODE, cand) + "globalThis." + key + " = globalThis.__JS_SPIDER__;",
+                    filename = "tv_box_root.js",
+                    asModule = true
+                )
+                return
+            } catch (th: Throwable) {
+                lastError = th
+                Loge.i("echo-spiderBridge-retry " + cand + ", msg=" + th.message)
+            }
+        }
+        throw lastError ?: IllegalStateException("spider bridge failed: $api")
+    }
+
+    // ---------------------------------------------------------------- 模块注册
+
+    /**
+     * alpha13 无动态 module loader: 递归扫描 import, 把依赖模块在 evaluate 前
+     * 全部 addModule 注册. 规范化对齐 QuickJS native 规则: 只有 "./"/"../"
+     * 开头的相对名才做解析, 其余保持原样.
+     */
+    private suspend fun registerModuleTree(runtime: QuickJs, name: String, content: String, visited: HashSet<String>) {
+        if (!visited.add(name)) return
+        if (content.startsWith("//DRPY") || content.startsWith("//bb")) {
+            val bytecode = if (content.startsWith("//DRPY")) {
+                Base64.decode(content.replace("//DRPY", ""), Base64.URL_SAFE)
+            } else {
+                byteFF(Base64.decode(content.replace("//bb", ""), Base64.DEFAULT))
+            }
+            try {
+                runtime.addModule(bytecode)
+            } catch (th: Throwable) {
+                Loge.e("echo-addModuleBytecode-error " + name + ", msg=" + th.message)
+            }
+            return
+        }
+        val cacheKey = moduleCacheKey(name)
+        if (cacheKey != null) {
+            val cached = JSRuntime.getCacheByte(cacheKey)
+            if (cached.isNotEmpty()) {
+                try {
+                    runtime.addModule(cached)
+                    return
+                } catch (ignored: Throwable) {
+                    // 缓存字节码损坏/模块名不匹配, 退回源码编译.
+                }
+            }
+        }
+        try {
+            runtime.addModule(name, content)
+        } catch (th: Throwable) {
+            Loge.e("echo-addModule-error " + name + ", msg=" + th.message)
+            try {
+                runtime.addModule(name, EMPTY_MODULE_CODE)
+            } catch (ignored: Throwable) {
+            }
+            return
+        }
+        if (cacheKey != null) {
+            try {
+                val bytecode = runtime.compile(content, filename = name, asModule = true)
+                JSRuntime.setCacheByte(cacheKey, bytecode)
+            } catch (ignored: Throwable) {
+            }
+        }
+        for (spec in scanImports(content)) {
+            val child = normalizeModule(name, spec)
+            val childContent = JSRuntime.loadModule(child)
+            if (childContent == null || isInvalidModuleContent(childContent)) {
+                Loge.i("echo-module-empty " + child)
+                try {
+                    runtime.addModule(child, EMPTY_MODULE_CODE)
+                } catch (ignored: Throwable) {
+                }
+                continue
+            }
+            registerModuleTree(runtime, child, childContent, visited)
+        }
+    }
+
+    /** QuickJS native js_module_normalize_name 同款规则: 仅相对名解析. */
+    private fun normalizeModule(base: String, spec: String): String {
+        if (!spec.startsWith("./") && !spec.startsWith("../")) return spec
+        return UriUtil.resolve(base, spec)
+    }
+
+    /** cheerio/crypto-js 按规范化名 Md5 做字节码缓存 (compile filename 必须与 import 名一致). */
+    private fun moduleCacheKey(name: String): String? = when {
+        name.contains("cheerio.min.js") -> "cheerio_" + Md5.encode(name)
+        name.contains("crypto-js.js") -> "cryptojs_" + Md5.encode(name)
+        else -> null
+    }
+
+    private val IMPORT_REGEX = Regex(
+        "(?:^|[\\r\\n;])\\s*(?:import|export)\\s+(?:[\\w$*{},\\s]+?\\s+from\\s+)?[\"']([^\"'\\n]+)[\"']"
+    )
+    private val DYNAMIC_IMPORT_REGEX = Regex("import\\s*\\(\\s*[\"']([^\"'\\n]+)[\"']\\s*\\)")
+
+    private fun scanImports(code: String): List<String> {
+        val statics = IMPORT_REGEX.findAll(code).map { it.groupValues[1] }
+        val dynamics = DYNAMIC_IMPORT_REGEX.findAll(code).map { it.groupValues[1] }
+        return (statics + dynamics).distinct().toList()
     }
 
     private fun isInvalidModuleContent(content: String?): Boolean {
@@ -336,100 +433,61 @@ class JsSpider(rawKey: String, val api: String, val dex: Class<*>?) : Spider() {
                 lower.startsWith("not found")
     }
 
-    private fun preloadTemplate() {
-        try {
-            val context = ctx!!
-            val template = "import tpl from '模板.js';\n" +
-                    "globalThis.muban = tpl.muban;\n" +
-                    "globalThis.getMubans = tpl.getMubans;"
-            context.evaluateModule(template, "tv_box_template.js")
-        } catch (th: Throwable) {
-            Loge.i("echo-preloadTemplate-error " + th.message)
-        }
+    fun byteFF(bytes: ByteArray): ByteArray {
+        val newBt = ByteArray(bytes.size - 4)
+        newBt[0] = 1
+        System.arraycopy(bytes, 5, newBt, 1, bytes.size - 5)
+        return newBt
     }
 
-    private fun createDex() {
-        try {
-            val context = ctx!!
-            val obj = context.createJSObject()
-            context.getGlobalObject().set("jsapi", obj)
-            val dexClass = dex ?: return
-            val classes = dexClass.declaredClasses
-            if (classes.isEmpty()) invokeSingle(dexClass, obj)
-            if (classes.isNotEmpty()) invokeMultiple(dexClass, obj)
-        } catch (e: Throwable) {
-            Loge.e("echo-createDex-error " + e.message)
-        }
-    }
+    // ---------------------------------------------------------------- 代理
 
-    private fun invokeSingle(clz: Class<*>, jsObj: JSObject) {
-        invoke(clz, jsObj, clz.getDeclaredConstructor(QuickJSContext::class.java).newInstance(ctx))
-    }
-
-    private fun invokeMultiple(clz: Class<*>, jsObj: JSObject) {
-        for (subClz in clz.declaredClasses) {
-            val outer = clz.getDeclaredConstructor(QuickJSContext::class.java).newInstance(ctx)
-            val javaObj = subClz.getDeclaredConstructor(clz).newInstance(outer)
-            val subObj = ctx!!.createJSObject()
-            invoke(subClz, subObj, javaObj)
-            jsObj.set(subClz.getSimpleName(), subObj)
-        }
-    }
-
-    private fun invoke(clz: Class<*>, jsObj: JSObject, javaObj: Any) {
-        for (method in clz.getMethods()) {
-            if (!method.isAnnotationPresent(Function::class.java)) continue
-            invoke(jsObj, method, javaObj)
-        }
-    }
-
-    private fun invoke(jsObj: JSObject, method: Method, javaObj: Any) {
-        jsObj.set(method.name, object : JSCallFunction {
-            override fun call(vararg args: Any?): Any? {
-                return try {
-                    method.invoke(javaObj, args)
-                } catch (e: Throwable) {
-                    null
-                }
-            }
-        })
-    }
-
+    /** catvod js 代理: spider.proxy(params) 返回数组 [code, type, content, header, opt]. */
     private fun proxy1(params: Map<String, String>): Array<Any?>? {
-        val context = ctx ?: return null
-        val spider = jsObject ?: return null
-        val object1 = JSUtils<String>().toObj(context, params)
-        val function = spider.getJSFunction("proxy") ?: return null
-        val array = (function.call(object1) as? JSArray)?.toJsonArray() ?: return null
-        val headerAvailable = array.length() > 3 && array.opt(3) != null
-        val result = arrayOfNulls<Any>(4)
-        result[0] = array.opt(0)
-        result[1] = array.opt(1)
-        result[2] = getStream(array.opt(2))
-        if (headerAvailable) result[3] = getHeader(array.opt(3))
-        if (array.length() > 4) {
+        val runtime = rt ?: return null
+        val result = callInline(runtime, "proxy", params) as? List<*> ?: return null
+        val headerAvailable = result.size > 3 && result[3] != null
+        val out = arrayOfNulls<Any>(4)
+        out[0] = (result.getOrNull(0) as? Number)?.toInt() ?: 200
+        out[1] = result.getOrNull(1)
+        out[2] = getStream(result.getOrNull(2))
+        if (headerAvailable) out[3] = getHeader(result[3])
+        if (result.size > 4) {
             try {
-                if (array.optInt(4) == 1) {
-                    var content = array.optString(2)
+                if ((result.getOrNull(4) as? Number)?.toInt() == 1) {
+                    val raw = result.getOrNull(2)
+                    var content = when (raw) {
+                        is String -> raw
+                        is Map<*, *> -> JsJson.stringify(raw)
+                        else -> raw?.toString() ?: ""
+                    }
                     if (content.contains("base64,")) content = content.substring(content.indexOf("base64,") + 7)
-                    result[2] = ByteArrayInputStream(Base64.decode(content, Base64.DEFAULT))
+                    out[2] = ByteArrayInputStream(Base64.decode(content, Base64.DEFAULT))
                 }
             } catch (ignored: Exception) {
             }
         }
-        return result
+        return out
     }
 
     private fun getStream(source: Any?): Any? {
-        if (source is InputStream) return source
-        if (source is ByteArray) return ByteArrayInputStream(source)
-        if (source is String) return ByteArrayInputStream(source.toByteArray(Charsets.UTF_8))
-        return source
+        return when (source) {
+            is InputStream -> source
+            is ByteArray -> ByteArrayInputStream(source)
+            is UByteArray -> ByteArrayInputStream(source.toByteArray())
+            is List<*> -> ByteArrayInputStream(source.map { (it as? Number)?.toByte() ?: 0.toByte() }.toByteArray())
+            is String -> ByteArrayInputStream(source.toByteArray(Charsets.UTF_8))
+            else -> source
+        }
     }
 
     private fun getHeader(headerRaw: Any?): Map<String, String>? {
         val headers = HashMap<String, String>()
-        if (headerRaw is JSONObject) {
+        if (headerRaw is Map<*, *>) {
+            for ((k, v) in headerRaw) {
+                headers[k.toString()] = v.toString()
+            }
+        } else if (headerRaw is JSONObject) {
             val json = headerRaw
             val keys = json.keys()
             while (keys.hasNext()) {
@@ -444,23 +502,17 @@ class JsSpider(rawKey: String, val api: String, val dex: Class<*>?) : Spider() {
                     val k = keys.next()
                     headers[k] = json.optString(k)
                 }
-            } catch (ignored: JSONException) {
-            }
-        } else if (headerRaw is Map<*, *>) {
-            for ((k, v) in headerRaw) {
-                headers[k.toString()] = v.toString()
+            } catch (ignored: org.json.JSONException) {
             }
         }
         return headers
     }
 
+    /** drpy js 代理: spider.proxy(urlSegs, header) 返回 JSON 字符串. */
     private fun proxy2(params: Map<String, String>): Array<Any?>? {
-        val context = ctx ?: return null
         val url = params["url"] ?: return null
         val header = params["header"] ?: ""
-        val array = submit(Callable { JSUtils<String>().toArray(context, url.split("/".toRegex())) }).get()
-        val object1 = submit(Callable { context.parse(header) }).get()
-        val json = (call("proxy", array, object1) as? String) ?: return null
+        val json = (call("proxy", url.split("/"), JsJson.parse(header)) as? String) ?: return null
         val res = Res.objectFrom(json)
         var contentType = res.getContentType()
         if (contentType.isEmpty()) contentType = "application/octet-stream"
@@ -482,31 +534,31 @@ class JsSpider(rawKey: String, val api: String, val dex: Class<*>?) : Spider() {
     companion object {
         private const val EMPTY_MODULE_CODE =
             "const empty = null;\n" +
-            "export default empty;\n" +
-            "export const JSEncrypt = empty;\n" +
-            "export const NodeRSA = empty;\n" +
-            "export const pako = empty;\n" +
-            "export const JSON5 = empty;\n" +
-            "export const mb = empty;\n" +
-            "export const parse = empty;\n" +
-            "export const stringify = empty;\n" +
-            "export const inflate = empty;\n" +
-            "export const deflate = empty;\n" +
-            "export const gzip = empty;\n" +
-            "export const ungzip = empty;\n" +
-            "export const encrypt = empty;\n" +
-            "export const decrypt = empty;"
+                    "export default empty;\n" +
+                    "export const JSEncrypt = empty;\n" +
+                    "export const NodeRSA = empty;\n" +
+                    "export const pako = empty;\n" +
+                    "export const JSON5 = empty;\n" +
+                    "export const mb = empty;\n" +
+                    "export const parse = empty;\n" +
+                    "export const stringify = empty;\n" +
+                    "export const inflate = empty;\n" +
+                    "export const deflate = empty;\n" +
+                    "export const gzip = empty;\n" +
+                    "export const ungzip = empty;\n" +
+                    "export const encrypt = empty;\n" +
+                    "export const decrypt = empty;"
 
         private const val SPIDER_STRING_CODE =
             "import * as spider from '%s'\n\n" +
-            "if (!globalThis.__JS_SPIDER__) {\n" +
-            "    if (spider.__jsEvalReturn) {\n" +
-            "        globalThis.req = http\n" +
-            "        globalThis.__JS_SPIDER__ = spider.__jsEvalReturn()\n" +
-            "        globalThis.__JS_SPIDER__.is_cat = true\n" +
-            "    } else if (spider.default) {\n" +
-            "        globalThis.__JS_SPIDER__ = typeof spider.default === 'function' ? spider.default() : spider.default\n" +
-            "    }\n" +
-            "}\n"
+                    "if (!globalThis.__JS_SPIDER__) {\n" +
+                    "    if (spider.__jsEvalReturn) {\n" +
+                    "        globalThis.req = http\n" +
+                    "        globalThis.__JS_SPIDER__ = spider.__jsEvalReturn()\n" +
+                    "        globalThis.__JS_SPIDER__.is_cat = true\n" +
+                    "    } else if (spider.default) {\n" +
+                    "        globalThis.__JS_SPIDER__ = typeof spider.default === 'function' ? spider.default() : spider.default\n" +
+                    "    }\n" +
+                    "}\n"
     }
 }

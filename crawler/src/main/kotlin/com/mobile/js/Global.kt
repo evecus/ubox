@@ -1,123 +1,155 @@
 package com.mobile.js
 
 import android.net.Uri
-import com.whl.quickjs.wrapper.ContextSetter
-import com.whl.quickjs.wrapper.Function
-import com.whl.quickjs.wrapper.JSArray
-import com.whl.quickjs.wrapper.JSFunction
-import com.whl.quickjs.wrapper.JSObject
-import com.whl.quickjs.wrapper.JSUtils
-import com.whl.quickjs.wrapper.QuickJSContext
+import com.dokar.quickjs.QuickJs
+import com.dokar.quickjs.binding.asyncFunction
+import com.dokar.quickjs.binding.define
+import com.dokar.quickjs.binding.function
 import com.github.catvod.server.LocalServer
-import java.util.Timer
-import java.util.TimerTask
-import java.util.concurrent.ExecutorService
-import okhttp3.Call
-import okhttp3.Callback
-import okhttp3.Response
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
-class Global(private val executor: ExecutorService) {
+/**
+ * JS 全局绑定层 (原 @Function 注解 + JSObject.bind 方案的 quickjs-kt 移植).
+ *
+ * quickjs-kt 的 JS 函数值无法跨 JNI 回调 (JsFunction 只是元数据), 所以:
+ *   - 原回调式 http (complete 回调) 改为 _httpAsync asyncFunction 绑定,
+ *     JS 侧由 net.js 直接拿到 Promise;
+ *   - setTimeout/setInterval 改为 __timer + JS 垫片 (见 JsSpider 的 shim),
+ *     通过 promise 链在 evaluate 的事件循环里调度.
+ */
+object Global {
 
-    private var runtime: QuickJSContext? = null
-    private val timer: Timer = Timer()
+    fun register(rt: QuickJs) {
+        rt.function("getProxy") { args -> getProxy(args.getOrNull(0)) }
+        rt.function("js2Proxy") { args -> js2Proxy(args) }
+        rt.function("joinUrl") { args ->
+            HtmlParser.joinUrl(args.getOrNull(0) as? String, args.getOrNull(1) as? String)
+        }
+        rt.function("pd") { args ->
+            HtmlParser.parseDomForUrl(
+                args.getOrNull(0) as? String,
+                args.getOrNull(1) as? String,
+                args.getOrNull(2) as? String ?: ""
+            )
+        }
+        rt.function("pdfh") { args ->
+            HtmlParser.parseDomForUrl(args.getOrNull(0) as? String, args.getOrNull(1) as? String, "")
+        }
+        rt.function("pdfa") { args ->
+            HtmlParser.parseDomForArray(args.getOrNull(0) as? String, args.getOrNull(1) as? String)
+        }
+        rt.function("pdfla") { args ->
+            HtmlParser.parseDomForList(
+                args.getOrNull(0) as? String,
+                args.getOrNull(1) as? String,
+                args.getOrNull(2) as? String,
+                args.getOrNull(3) as? String,
+                args.getOrNull(4) as? String ?: ""
+            )
+        }
+        rt.function("s2t") { args ->
+            try {
+                Trans.s2t(false, args.getOrNull(0) as? String)
+            } catch (e: Exception) {
+                ""
+            }
+        }
+        rt.function("t2s") { args ->
+            try {
+                Trans.t2s(false, args.getOrNull(0) as? String)
+            } catch (e: Exception) {
+                ""
+            }
+        }
+        rt.function("aesX") { args ->
+            Crypto.aes(
+                args.getOrNull(0) as? String ?: "AES/CBC",
+                (args.getOrNull(1) as? Boolean) ?: true,
+                args.getOrNull(2) as? String ?: "",
+                (args.getOrNull(3) as? Boolean) ?: false,
+                args.getOrNull(4) as? String ?: "0123456789abcdef",
+                args.getOrNull(5) as? String,
+                (args.getOrNull(6) as? Boolean) ?: true
+            )
+        }
+        rt.function("rsaX") { args ->
+            Crypto.rsa(
+                (args.getOrNull(1) as? Boolean) ?: false,
+                (args.getOrNull(2) as? Boolean) ?: false,
+                args.getOrNull(3) as? String ?: "",
+                (args.getOrNull(4) as? Boolean) ?: false,
+                args.getOrNull(5) as? String ?: "",
+                (args.getOrNull(6) as? Boolean) ?: true
+            )
+        }
+        rt.function("rsaEncrypt") { args -> rsaEncrypt(args) }
+        rt.function("rsaDecrypt") { args -> rsaDecrypt(args) }
+        rt.function("_http") { args -> http(args) }
+        rt.asyncFunction("_httpAsync") { args -> withContext(Dispatchers.IO) { http(args) } }
+        rt.asyncFunction("__timer") { args ->
+            delay((args.getOrNull(0) as? Number)?.toLong() ?: 0L)
+        }
+        rt.define("local") {
+            function("get") { args ->
+                local.get(args.getOrNull(0) as? String, args.getOrNull(1) as? String)
+            }
+            function("set") { args ->
+                local.set(
+                    args.getOrNull(0) as? String,
+                    args.getOrNull(1) as? String,
+                    args.getOrNull(2) as? String
+                )
+                null
+            }
+            function("delete") { args ->
+                local.delete(args.getOrNull(0) as? String, args.getOrNull(1) as? String)
+                null
+            }
+        }
+        rt.define("console") {
+            function("log") { args -> Loge.i("QuJs" + fmt(args)) }
+            function("info") { args -> Loge.i("QuJs" + fmt(args)) }
+            function("warn") { args -> Loge.i("QuJs" + fmt(args)) }
+            function("error") { args -> Loge.i("QuJs" + fmt(args)) }
+        }
+    }
 
-    @Function
-    fun getProxy(local: Any?): String {
-        val l = local is Boolean && local
+    private fun getProxy(localArg: Any?): String {
+        val l = localArg is Boolean && localArg
         return LocalServer.getAddress(l) + "proxy?do=js"
     }
 
-    @Function
-    fun js2Proxy(vararg args: Any?): String {
-        val dynamic = if (args.isNotEmpty()) args[0] as? Boolean else false
-        val siteType = if (args.size > 1) args[1] as? Int else 0
-        val siteKey = if (args.size > 2) args[2] as? String else ""
-        val url = if (args.size > 3) args[3] as? String else ""
-        val headers = if (args.size > 4) args[4] as? JSObject else null
+    private fun js2Proxy(args: Array<Any?>): String {
+        val dynamic = args.getOrNull(0) as? Boolean
+        val siteType = (args.getOrNull(1) as? Number)?.toInt() ?: 0
+        val siteKey = args.getOrNull(2) as? String ?: ""
+        val url = args.getOrNull(3) as? String ?: ""
+        val headers = args.getOrNull(4) as? Map<*, *>
         val local = dynamic == null || !dynamic
         val headerJson = try {
-            headers?.toJsonString() ?: ""
+            if (headers != null) JsJson.stringify(headers) else ""
         } catch (e: Exception) {
             ""
         }
-        return getProxy(local) + "&from=catvod" + "&siteType=" + (siteType ?: 0) + "&siteKey=" + (siteKey ?: "") +
-                "&header=" + Uri.encode(headerJson) + "&url=" + Uri.encode(url ?: "")
+        return getProxy(local) + "&from=catvod" + "&siteType=" + siteType + "&siteKey=" + siteKey +
+                "&header=" + Uri.encode(headerJson) + "&url=" + Uri.encode(url)
     }
 
-    @Function
-    fun joinUrl(parent: String?, child: String?): String? {
-        return HtmlParser.joinUrl(parent, child)
-    }
-
-    @Function
-    fun pd(html: String?, rule: String?, add_url: String?): String {
-        return HtmlParser.parseDomForUrl(html, rule, add_url ?: "")
-    }
-
-    @Function
-    fun pdfh(html: String?, rule: String?): String {
-        return HtmlParser.parseDomForUrl(html, rule, "")
-    }
-
-    @Function
-    fun pdfa(html: String?, rule: String?): JSArray? {
-        val rt = runtime ?: return null
-        return JSUtils<String>().toArray(rt, HtmlParser.parseDomForArray(html, rule))
-    }
-
-    @Function
-    fun pdfla(html: String?, p1: String?, list_text: String?, list_url: String?, add_url: String?): JSArray? {
-        val rt = runtime ?: return null
-        return JSUtils<String>().toArray(rt, HtmlParser.parseDomForList(html, p1, list_text, list_url, add_url ?: ""))
-    }
-
-    @Function
-    fun s2t(text: String?): String {
-        return try {
-            Trans.s2t(false, text)
-        } catch (e: Exception) {
-            ""
-        }
-    }
-
-    @Function
-    fun t2s(text: String?): String {
-        return try {
-            Trans.t2s(false, text)
-        } catch (e: Exception) {
-            ""
-        }
-    }
-
-    @Function
-    fun aesX(mode: String?, encrypt: Boolean?, input: String?, inBase64: Boolean?, key: String?, iv: String?, outBase64: Boolean?): String {
-        return Crypto.aes(mode ?: "AES/CBC", encrypt ?: true, input ?: "", inBase64 ?: false, key ?: "0123456789abcdef", iv, outBase64 ?: true)
-    }
-
-    @Function
-    fun rsaX(mode: String?, pub: Boolean?, encrypt: Boolean?, input: String?, inBase64: Boolean?, key: String?, outBase64: Boolean?): String {
-        return Crypto.rsa(pub ?: false, encrypt ?: false, input ?: "", inBase64 ?: false, key ?: "", outBase64 ?: true)
-    }
-
-    @Function
-    fun rsaEncrypt(vararg args: Any?): String {
-        if (args.isEmpty()) return ""
-        val data = args[0] as? String ?: return ""
-        if (args.size < 2) return ""
-        val key = args[1] as? String ?: return ""
+    private fun rsaEncrypt(args: Array<Any?>): String {
+        val data = args.getOrNull(0) as? String ?: return ""
+        val key = args.getOrNull(1) as? String ?: return ""
+        val op = args.getOrNull(2) as? Map<*, *>
         var mLong = 1
         var mType = 1
         var mBlock = true
         var mConfig: String? = null
-        if (args.size > 2 && args[2] is JSObject) {
-            try {
-                val op = (args[2] as JSObject).toJsonObject()
-                if (op.has("config")) mConfig = op.getString("config")
-                if (op.has("type")) mType = (op.getDouble("type") ?: 1.0).toInt()
-                if (op.has("long")) mLong = (op.getDouble("long") ?: 1.0).toInt()
-                if (op.has("block")) mBlock = op.getBoolean("block") ?: true
-            } catch (ignored: Exception) {
-            }
+        if (op != null) {
+            mConfig = op["config"]?.toString()
+            (op["type"] as? Number)?.let { mType = it.toInt() }
+            (op["long"] as? Number)?.let { mLong = it.toInt() }
+            (op["block"] as? Boolean)?.let { mBlock = it }
         }
         return try {
             when (mType) {
@@ -136,25 +168,19 @@ class Global(private val executor: ExecutorService) {
         }
     }
 
-    @Function
-    fun rsaDecrypt(vararg args: Any?): String {
-        if (args.isEmpty()) return ""
-        val data = args[0] as? String ?: return ""
-        if (args.size < 2) return ""
-        val key = args[1] as? String ?: return ""
+    private fun rsaDecrypt(args: Array<Any?>): String {
+        val data = args.getOrNull(0) as? String ?: return ""
+        val key = args.getOrNull(1) as? String ?: return ""
+        val op = args.getOrNull(2) as? Map<*, *>
         var mLong = 1
         var mType = 1
         var mBlock = true
         var mConfig: String? = null
-        if (args.size > 2 && args[2] is JSObject) {
-            try {
-                val op = (args[2] as JSObject).toJsonObject()
-                if (op.has("config")) mConfig = op.getString("config")
-                if (op.has("type")) mType = (op.getDouble("type") ?: 1.0).toInt()
-                if (op.has("long")) mLong = (op.getDouble("long") ?: 1.0).toInt()
-                if (op.has("block")) mBlock = op.getBoolean("block") ?: true
-            } catch (ignored: Exception) {
-            }
+        if (op != null) {
+            mConfig = op["config"]?.toString()
+            (op["type"] as? Number)?.let { mType = it.toInt() }
+            (op["long"] as? Number)?.let { mLong = it.toInt() }
+            (op["block"] as? Boolean)?.let { mBlock = it }
         }
         return try {
             when (mType) {
@@ -173,75 +199,34 @@ class Global(private val executor: ExecutorService) {
         }
     }
 
-    private fun req(url: String, options: JSObject): JSObject? {
-        val rt = runtime ?: return null
-        try {
-            val request = Req.objectFrom(options.toJsonObject().toString())
+    /**
+     * 同步 http (net.js 的 req 走这里). 原回调式 complete 分支已由
+     * _httpAsync + net.js 承接, 这里不再处理 complete.
+     */
+    private fun http(args: Array<Any?>): Map<String, Any?> {
+        val url = args.getOrNull(0) as? String
+        if (url.isNullOrEmpty()) return Connect.error()
+        val options = args.getOrNull(1) as? Map<*, *> ?: emptyMap<Any?, Any?>()
+        val request = Req.objectFrom(JsJson.stringify(options))
+        return try {
             val res = Connect.to(url, request).execute()
             try {
-                return Connect.success(rt, request, res)
+                Connect.success(request, res)
             } finally {
                 res.close()
             }
         } catch (e: Exception) {
-            return Connect.error(rt)
+            Connect.error()
         }
     }
 
-    @Function
-    fun _http(url: String?, options: JSObject): JSObject? {
-        if (url.isNullOrEmpty()) return null
-        val complete = options.getJSFunction("complete")
-        if (complete == null) return req(url, options)
-        val request = Req.objectFrom(options.toJsonObject().toString())
-        Connect.to(url, request).enqueue(getCallback(complete, request))
-        return null
-    }
-
-    @Function
-    fun setTimeout(func: JSFunction?, delay: Int?) {
-        if (func == null) return
-        try {
-            func.hold()
-            timer.schedule(object : TimerTask() {
-                override fun run() {
-                    try {
-                        if (!executor.isShutdown) executor.submit(Runnable { func.call() })
-                    } catch (ignored: Throwable) {
-                    }
-                }
-            }, (delay ?: 0).toLong())
-        } catch (ignored: Throwable) {
-        }
-    }
-
-    private fun getCallback(complete: JSFunction, req: Req): Callback {
-        return object : Callback {
-            override fun onResponse(call: Call, res: Response) {
-                var rt = runtime
-                try {
-                    if (rt != null) {
-                        val context = rt
-                        executor.submit(Runnable { complete.call(Connect.success(context, req, res)) })
-                    }
-                } catch (ignored: Throwable) {
-                } finally {
-                    res.close()
-                }
-            }
-
-            override fun onFailure(call: Call, e: java.io.IOException) {
-                try {
-                    val rt = runtime
-                    if (rt != null) executor.submit(Runnable { complete.call(Connect.error(rt)) })
-                } catch (ignored: Throwable) {
-                }
+    private fun fmt(args: Array<Any?>): String {
+        return args.joinToString(" ") { a ->
+            when (a) {
+                null -> "undefined"
+                is Map<*, *>, is List<*> -> JsJson.stringify(a)
+                else -> a.toString()
             }
         }
-    }
-
-    @ContextSetter
-    fun setJSContext(runtime: QuickJSContext) {
-        this.runtime = runtime
     }
 }

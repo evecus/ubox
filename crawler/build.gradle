@@ -22,7 +22,11 @@ android {
 }
 
 dependencies {
-    api project(":quickjs")
+    // JS 引擎: dokar3/quickjs-kt (纯 Kotlin 绑定, 协程异步), 替代原本地 quickjs 模块.
+    // alpha13 内置 QuickJS 2024-02 版, 含 arm64-v8a/armeabi-v7a/x86/x86_64 四架构 so,
+    // 打包时由 app 的 NOVA_ABI_FILTERS abiFilters 裁剪, 无需再手动管理 so.
+    implementation "io.github.dokar3:quickjs-kt:1.0.0-alpha13"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0"
     api "com.squareup.okhttp3:okhttp:4.12.0"
     implementation "com.squareup.okhttp3:okhttp-dnsoverhttps:4.12.0"
     implementation "org.jsoup:jsoup:1.17.2"

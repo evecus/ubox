@@ -2,10 +2,6 @@ package com.mobile.js
 
 import android.util.Base64
 import com.github.catvod.net.Net
-import com.whl.quickjs.wrapper.JSArray
-import com.whl.quickjs.wrapper.JSObject
-import com.whl.quickjs.wrapper.JSUtils
-import com.whl.quickjs.wrapper.QuickJSContext
 import okhttp3.Call
 import okhttp3.FormBody
 import okhttp3.Headers
@@ -19,6 +15,12 @@ import okhttp3.MediaType.Companion.toMediaType
 import java.nio.charset.Charset
 import java.util.Random
 
+/**
+ * OkHttp 请求桥接 (原 quickjs JSObject 方案的 Map 版移植).
+ *
+ * success()/error() 返回 Map<String, Any?>, 经 quickjs-kt 类型映射
+ * 直接变成 JS object: { headers: {...}, content: String | number[] | base64 }.
+ */
 object Connect {
 
     fun to(url: String, req: Req): Call {
@@ -26,32 +28,27 @@ object Connect {
         return client.newCall(getRequest(url, req, req.getHeader().toHeaders()))
     }
 
-    fun success(ctx: QuickJSContext, req: Req, res: Response): JSObject {
-        try {
-            val jsObject = ctx.createJSObject()
-            val jsHeader = ctx.createJSObject()
-            setHeader(ctx, res, jsHeader)
-            jsObject.set("headers", jsHeader)
-            val bytes = res.body?.bytes() ?: ByteArray(0)
-            if (req.getBuffer() == 0) jsObject.set("content", String(bytes, charset(req.getCharset())))
-            if (req.getBuffer() == 1) {
-                val array = ctx.createJSArray()
-                for (aByte in bytes) array.push(aByte.toInt())
-                jsObject.set("content", array)
+    fun success(req: Req, res: Response): Map<String, Any?> {
+        return try {
+            val headers = LinkedHashMap<String, Any?>()
+            for ((key, value) in res.headers.toMultimap()) {
+                if (value.size == 1) headers[key] = value[0]
+                if (value.size >= 2) headers[key] = value.toList()
             }
-            if (req.getBuffer() == 2) jsObject.set("content", Base64.encodeToString(bytes, Base64.DEFAULT or Base64.NO_WRAP))
-            return jsObject
+            val bytes = res.body?.bytes() ?: ByteArray(0)
+            val content: Any = when (req.getBuffer()) {
+                1 -> bytes.map { it.toInt() }
+                2 -> Base64.encodeToString(bytes, Base64.DEFAULT or Base64.NO_WRAP)
+                else -> String(bytes, charset(req.getCharset()))
+            }
+            mapOf("headers" to headers, "content" to content)
         } catch (e: Exception) {
-            return error(ctx)
+            error()
         }
     }
 
-    fun error(ctx: QuickJSContext): JSObject {
-        val jsObject = ctx.createJSObject()
-        val jsHeader = ctx.createJSObject()
-        jsObject.set("headers", jsHeader)
-        jsObject.set("content", "")
-        return jsObject
+    fun error(): Map<String, Any?> {
+        return mapOf("headers" to emptyMap<String, Any?>(), "content" to "")
     }
 
     private fun charset(name: String): Charset {
@@ -98,13 +95,6 @@ object Connect {
         val params = Json.toMap(req.getData())
         for ((key, value) in params) builder.addFormDataPart(key, value)
         return builder.build()
-    }
-
-    private fun setHeader(ctx: QuickJSContext, res: Response, object1: JSObject) {
-        for ((key, value) in res.headers.toMultimap()) {
-            if (value.size == 1) object1.set(key, value[0])
-            if (value.size >= 2) object1.set(key, JSUtils<String>().toArray(ctx, value))
-        }
     }
 
     fun cancelByTag(tag: Any?) {

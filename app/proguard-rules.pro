@@ -39,10 +39,10 @@
 -keep class com.github.catvod.crawler.** { *; }
 -dontwarn com.github.catvod.crawler.**
 
-# quickjs 引擎 (JNI): 实际包名是 com.whl.quickjs, so 的 JNI 按原类名绑定,
-# 类名被 R8 改写后 RegisterNatives/FindClass 失败 → 引擎初始化即崩.
--keep class com.whl.quickjs.** { *; }
--dontwarn com.whl.quickjs.**
+# quickjs-kt 引擎 (JNI): JNI 按原类名绑定, 类名被 R8 改写后
+# RegisterNatives/FindClass 失败 → 引擎初始化即崩.
+-keep class com.dokar.quickjs.** { *; }
+-dontwarn com.dokar.quickjs.**
 
 # crawler 的辅助包 (com.mobile.js.App 等): 爬虫 jar 的 dex 在运行时直接引用
 # 这些类, 不会出现在 app 静态可达图里, 必须显式 keep.
@@ -85,7 +85,6 @@
 -keep class kotlinx.coroutines.** { *; }
 -keep class androidx.collection.** { *; }
 -keep class fi.iki.elonen.** { *; }
--keep class com.whl.quickjs.** { *; }
 -dontwarn kotlin.**
 -dontwarn org.jsoup.**
 -dontwarn com.google.gson.**
@@ -118,5 +117,5 @@
 -keep class com.mobile.** { *; }
 -keep interface com.mobile.** { *; }
 -keepclassmembers class com.mobile.** { *; }
--keep class com.whl.quickjs.** { *; }
+-keep class com.dokar.quickjs.** { *; }
 -keep class com.me.ubox.engine.** { *; }

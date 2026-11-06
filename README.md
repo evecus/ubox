@@ -14,10 +14,9 @@ Android only, phone + TV (leanback) in one APK.
   `NovaDanmakuParser` 解析 bilibili XML (含高级弹幕), `DanmakuManager` 负责
   seek 对齐/缓冲冻结/设置热更新 (对照原版 DanmuLoadController).
 - **Crawler engine (Kotlin, unchanged)**:
-  - `quickjs/` — QuickJS JNI wrapper (verbatim from the original UBox project, must not be modified).
-  - `crawler/` — spider engine: `com.mobile.js.*` (JS bridge, QuickJS runtime, okhttp, crypto, trans),
+  - `crawler/` — spider engine: `com.mobile.js.*` (JS bridge, quickjs-kt runtime, okhttp, crypto, trans),
     `com.github.catvod.*` (Spider, JsLoader, JarLoader, LocalServer on port 39978, proxy routing).
-  - `app/` — `UBoxApplication` (QuickJSLoader + LocalServer bootstrap),
+  - `app/` — `UBoxApplication` (LocalServer bootstrap),
     `com.me.ubox.engine.EngineClient` — 原 Flutter 版 `ubox/engine` MethodChannel 的
     Kotlin 直连替代 (协程封装 SpiderLoader/LocalServer/OkHttp/ConfigCrypto).
 
@@ -72,7 +71,7 @@ extension-based filtering would kill every source.
 
 ## Run
 
-仓库根即 Android 工程根 (settings.gradle / app / crawler / quickjs 均在根下).
+仓库根即 Android 工程根 (settings.gradle / app / crawler 均在根下).
 用 Android Studio (Ladybug+) 直接打开本目录, 或 `./gradlew assembleDebug`
 (minSdk 24, compileSdk 35, AGP 8.11.1, Kotlin 2.2.20).
 ABI: 默认 `armeabi-v7a,arm64-v8a`, CI 通过 `NOVA_ABI_FILTERS` 覆盖为单架构.
@@ -80,7 +79,7 @@ ABI: 默认 `armeabi-v7a,arm64-v8a`, CI 通过 `NOVA_ABI_FILTERS` 覆盖为单�
 ## Release 构建
 
 `./gradlew assembleRelease` 开启 R8 混淆 + 资源收缩 (`minifyEnabled` / `shrinkResources`,
-规则见 `app/proguard-rules.pro`: 弹幕大师 / crawler / quickjs / JNI 均已 keep).
+规则见 `app/proguard-rules.pro`: 弹幕大师 / crawler / quickjs-kt / JNI 均已 keep).
 
 签名按优先级自动选择 (无需改代码, 换环境不改配置):
 

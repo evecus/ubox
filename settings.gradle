@@ -14,5 +14,4 @@ plugins {
 }
 
 include ":app"
-include ":quickjs"
 include ":crawler"
