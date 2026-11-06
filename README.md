@@ -15,7 +15,7 @@ Android only, phone + TV (leanback) in one APK.
   seek 对齐/缓冲冻结/设置热更新 (对照原版 DanmuLoadController).
 - **Crawler engine (Kotlin, unchanged)**:
   - `crawler/` — spider engine: `com.mobile.js.*` (JS bridge, quickjs-kt runtime, okhttp, crypto, trans),
-    `com.github.catvod.*` (Spider, JsLoader, JarLoader, LocalServer on port 39978, proxy routing).
+    `com.github.catvod.*` (Spider, JsLoader, JarLoader, LocalServer on port 9978, proxy routing).
   - `app/` — `UBoxApplication` (LocalServer bootstrap),
     `com.me.ubox.engine.EngineClient` — 原 Flutter 版 `ubox/engine` MethodChannel 的
     Kotlin 直连替代 (协程封装 SpiderLoader/LocalServer/OkHttp/ConfigCrypto).

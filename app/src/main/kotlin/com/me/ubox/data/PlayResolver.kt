@@ -23,7 +23,7 @@ object PlayResolver {
     suspend fun resolve(site: Site, flag: String, id: String): PlayInfo? {
         return try {
             // 对照原版播放页 initData: 先声明当前播放源, 再 playerContent.
-            // jar 源 playerContent 内部会同步探测 http://127.0.0.1:39978/proxy?do=ck (不带 siteKey),
+            // jar 源 playerContent 内部会同步探测 http://127.0.0.1:9978/proxy?do=ck (不带 siteKey),
             // 引擎靠 currentPlaySourceKey 回退定位到本源的 spider 实例, 探测才能 200.
             EngineClient.setPlaySource(site.key)
             val json = SpiderData.play(site.key, flag, id)
@@ -36,7 +36,7 @@ object PlayResolver {
             } else ""
 
             // js spider own proxy pass-through (proxy://do=js&...)
-            // 原版 DefaultConfig.checkReplaceProxy: proxy:// → http://127.0.0.1:39978/proxy?
+            // 原版 DefaultConfig.checkReplaceProxy: proxy:// → http://127.0.0.1:9978/proxy?
             // 引擎未就绪时 serverAddress 为空, 此时拼出来的是相对地址必然转圈, 直接判失败.
             if (url.startsWith("proxy://")) {
                 if (serverAddress.isEmpty()) return null

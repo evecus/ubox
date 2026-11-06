@@ -17,7 +17,7 @@ import com.me.ubox.danmaku.DanmuSettings
  *   - 不再有 Flutter embedding / MethodChannel, 引擎调用走 [com.me.ubox.engine.EngineClient]
  *     直连 SpiderLoader / LocalServer / OkHttp / ConfigCrypto (协程封装).
  *   - QuickJS 运行时 (quickjs-kt) 由依赖自带 so 并自动加载, 无需手动 init;
- *     本地代理服务 (端口 39978) 启动顺序保持不变.
+ *     本地代理服务 (端口 9978) 启动顺序保持不变.
  *   - TV 检测 / 弹幕设置 / 首页偏好 / 直播源 均在首帧前完成加载
  *     (对照 Flutter 版 main.dart 的 await 初始化序列).
  */
