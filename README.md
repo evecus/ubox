@@ -16,7 +16,7 @@ Android only, phone + TV (leanback) in one APK.
 - **Crawler engine (Kotlin, unchanged)**:
   - `quickjs/` — QuickJS JNI wrapper (verbatim from the original UBox project, must not be modified).
   - `crawler/` — spider engine: `com.mobile.js.*` (JS bridge, QuickJS runtime, okhttp, crypto, trans),
-    `com.github.catvod.*` (Spider, JsLoader, JarLoader, LocalServer on port 9978, proxy routing).
+    `com.github.catvod.*` (Spider, JsLoader, JarLoader, LocalServer on port 39978, proxy routing).
   - `app/` — `UBoxApplication` (QuickJSLoader + LocalServer bootstrap),
     `com.me.ubox.engine.EngineClient` — 原 Flutter 版 `ubox/engine` MethodChannel 的
     Kotlin 直连替代 (协程封装 SpiderLoader/LocalServer/OkHttp/ConfigCrypto).

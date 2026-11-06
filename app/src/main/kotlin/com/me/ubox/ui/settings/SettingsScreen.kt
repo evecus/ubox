@@ -649,7 +649,7 @@ fun SettingsScreen() {
             text = "UBox (Jetpack Compose 版)\n" +
                 "播放器: ExoPlayer (media3)\n" +
                 "爬虫引擎: QuickJS + OkHttp (Kotlin)\n" +
-                "本地代理端口: 9978",
+                "本地代理端口: 39978",
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(24.dp))
