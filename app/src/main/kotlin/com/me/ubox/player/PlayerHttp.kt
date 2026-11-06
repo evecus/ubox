@@ -71,7 +71,7 @@ private class HeaderedDataSource : DataSource {
  * 播放地址类型推断 (补齐 DefaultMediaSourceFactory 只按 URI 扩展名推断的盲区).
  *
  * media3 的 Util.inferContentType 只看 path 扩展名, 而 TVBox 的播放地址分两种:
- *   - 本地代理: `http://127.0.0.1:9978/proxy?do=m3u8&url=<真实地址>`, path 是
+ *   - 本地代理: `http://127.0.0.1:39978/proxy?do=m3u8&url=<真实地址>`, path 是
  *     `/proxy` 没有扩展名 → 被推断成 progressive, m3u8 文本交给 extractor 必然报
  *     "None of the available extractors could read the stream"
  *     (contentIsMalformed=false, dataType=1);

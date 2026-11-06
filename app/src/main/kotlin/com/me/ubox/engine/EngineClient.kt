@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *   - loadMainJar 同步加载主 jar, 返回空串 = 成功, 非空 = 可读失败原因
  *   - invoke      spider 调用 (home/homeVod/category/detail/search/player/live/action)
  *   - setPlaySource 进入/退出播放页声明当前播放源 (jar 源 do=ck 探测回退定位)
- *   - proxyUrl   本地代理基址 `http://127.0.0.1:9978/proxy?do=js`
+ *   - proxyUrl   本地代理基址 `http://127.0.0.1:39978/proxy?do=js`
  *   - getText    OkHttp 拉文本 (标准 UA + charset 解码, Dart/Compose 侧被反爬时兜底)
  *   - decrypt    原版 FindResult 的配置解密
  *   - download   OkHttp 下载二进制 (jar), 支持 IDN 中文域名

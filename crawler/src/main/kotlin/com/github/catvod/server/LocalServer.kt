@@ -27,7 +27,7 @@ object LocalServer {
             loge("echo-server-started port=$port")
         } catch (th: Throwable) {
             started = false
-            // 绑定失败必须留痕: 播放链路全靠 9978, 静默吞掉会让播放一直转圈无迹可循
+            // 绑定失败必须留痕: 播放链路全靠 39978, 静默吞掉会让播放一直转圈无迹可循
             loge("echo-server-start-failed port=$port msg=" + th.message)
         }
     }
