@@ -25,7 +25,7 @@ dependencies {
     // JS 引擎: dokar3/quickjs-kt (纯 Kotlin 绑定, 协程异步), 替代原本地 quickjs 模块.
     // v1.0.17 正式版, 内置 QuickJS 2025 版, 支持 Android 15+ 16KB page size,
     // 打包时由 app 的 NOVA_ABI_FILTERS abiFilters 裁剪, 无需再手动管理 so.
-    implementation "io.github.dokar3:quickjs-kt:1.0.17"
+    implementation "io.github.dokar3:quickjs-kt:1.0.15"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0"
     api "com.squareup.okhttp3:okhttp:4.12.0"
     implementation "com.squareup.okhttp3:okhttp-dnsoverhttps:4.12.0"
