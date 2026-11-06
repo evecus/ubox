@@ -126,7 +126,7 @@ class JsSpider(rawKey: String, val api: String, val dex: Class<*>?) : Spider() {
 
     override fun categoryContent(tid: String?, pg: String?, filter: Boolean, extend: HashMap<String, String>?): String {
         return try {
-            (call("category", tid, pg, filter, extend ?: emptyMap()) as? String) ?: ""
+            (call("category", tid, pg, filter, extend ?: emptyMap<String, String>()) as? String) ?: ""
         } catch (e: Exception) {
             ""
         }
@@ -150,7 +150,7 @@ class JsSpider(rawKey: String, val api: String, val dex: Class<*>?) : Spider() {
 
     override fun playerContent(flag: String?, id: String?, vipFlags: List<String>?): String {
         return try {
-            (call("play", flag, id, vipFlags ?: emptyList()) as? String) ?: ""
+            (call("play", flag, id, vipFlags ?: emptyList<String>()) as? String) ?: ""
         } catch (e: Exception) {
             ""
         }
@@ -222,10 +222,12 @@ class JsSpider(rawKey: String, val api: String, val dex: Class<*>?) : Spider() {
     private fun initializeJS() {
         try {
             submit(Callable {
-                try {
-                    initializeRuntime()
-                } catch (th: Throwable) {
-                    Loge.e("echo-initializeJS-error " + th.message)
+                runBlocking {
+                    try {
+                        initializeRuntime()
+                    } catch (th: Throwable) {
+                        Loge.e("echo-initializeJS-error " + th.message)
+                    }
                 }
                 null
             }).get()

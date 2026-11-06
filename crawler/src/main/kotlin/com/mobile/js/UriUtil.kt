@@ -130,7 +130,7 @@ object UriUtil {
         val hasAuthority = schemeIndex + 2 < queryIndex
                 && s[schemeIndex + 1] == '/'
                 && s[schemeIndex + 2] == '/'
-        val pathIndex: Int
+        var pathIndex: Int
         if (hasAuthority) {
             pathIndex = s.indexOf('/', schemeIndex + 3)
             if (pathIndex == -1 || pathIndex > queryIndex) pathIndex = queryIndex
