@@ -11,7 +11,7 @@ import java.util.HashMap
 
 object LocalServer {
 
-    const val port: Int = 9981
+    const val port: Int = 9978
 
     private var server: ControlServer? = null
 
