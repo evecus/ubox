@@ -49,6 +49,8 @@ android {
         release {
             // 正式签名: 由环境变量注入 (CI 的 secrets → RELEASE_STORE_FILE 等).
             // 变量缺失或文件不存在时, buildTypes.release 自动回退 debug keystore.
+            enableV2Signing = true
+            enableV3Signing = true
             def envStore = System.getenv("RELEASE_STORE_FILE")
             if (envStore != null && file(envStore).exists()) {
                 storeFile file(envStore)
