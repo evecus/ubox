@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- parent 用 "android:Theme.X" 隐式写法引用框架主题: "@android:style/Theme.X"
+         显式写法在部分 AAPT/AGP 组合下会报 resource not found, 隐式写法最稳.
+         注意: Material 系框架主题没有 NoTitleBar 变体, 对应的是 NoActionBar. -->
+    <style name="LaunchTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/launch_background</item>
+    </style>
+    <style name="NormalTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+    </style>
+</resources>
