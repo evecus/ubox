@@ -212,6 +212,26 @@ fun UBoxApp() {
     BackHandler(enabled = backStack.size > 1) {
         backStack.removeAt(backStack.size - 1)
     }
+    // 主界面 (栈底) 返回键: 非首页页签先回首页; 首页 2 秒内连按两次返回才退出 (对照 NovaBox MainActivity.doExit).
+    // 注册在最前 => 优先级最低: 子页面/设置页/直播全屏等自己的 BackHandler 启用时先由它们消费.
+    val exitContext = androidx.compose.ui.platform.LocalContext.current
+    var lastBackAt by remember { mutableStateOf(0L) }
+    val mainShellTab by AppShell.tabIndex.collectAsStateWithLifecycle()
+    BackHandler(enabled = backStack.size == 1) {
+        if (mainShellTab != AppShell.HOME_TAB) {
+            AppShell.selectTab(AppShell.HOME_TAB)
+            return@BackHandler
+        }
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastBackAt < 2000L) {
+            var ctx: android.content.Context? = exitContext
+            while (ctx is android.content.ContextWrapper && ctx !is android.app.Activity) ctx = ctx.baseContext
+            (ctx as? android.app.Activity)?.finishAndRemoveTask()
+        } else {
+            lastBackAt = now
+            android.widget.Toast.makeText(exitContext, "再按一次返回键退出APP", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
     // 直播页内点"去设置": 页签切到设置 -> 关闭直播页, 回到外壳显示设置页.
     val shellTab by AppShell.tabIndex.collectAsStateWithLifecycle()
     LaunchedEffect(shellTab) {
